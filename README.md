@@ -50,18 +50,18 @@ Download from the [latest release](https://github.com/aidotmarket/vectoraiz/rele
 ```bash
 git clone https://github.com/aidotmarket/vectoraiz.git
 cd vectoraiz
-docker-compose up --build
+docker compose -f docker-compose.customer.yml up -d
 ```
 
 Once running:
 
-- **vectorAIz UI** → [http://localhost:8000](http://localhost:8000)
-- **API docs** → [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Health check** → [http://localhost:8000/api/health](http://localhost:8000/api/health)
+- **vectorAIz UI** → [http://localhost:8080](http://localhost:8080)
+- **API docs** → [http://localhost:8080/docs](http://localhost:8080/docs)
+- **Health check** → [http://localhost:8080/api/health](http://localhost:8080/api/health)
 
 ## First-Time Setup
 
-1. **Launch vectorAIz** — open `http://localhost:8000` in your browser
+1. **Launch vectorAIz** — open `http://localhost:8080` in your browser
 2. **Create your account** — set up a local admin username and password
 3. **Connect your LLM** — go to Settings → LLM and add your API key (OpenAI, Anthropic, or Gemini)
 4. **Upload data** — drag and drop files or use bulk upload
@@ -86,13 +86,13 @@ vectorAIz runs as Docker containers on your machine:
 │  ┌───────────┐  ┌────────────┐           │
 │  │ vectorAIz │──│   Qdrant   │           │
 │  │   API     │  │  (vectors) │           │
-│  │  :8000    │  │   :6333    │           │
-│  │           │  └────────────┘           │
-│  │           │  ┌────────────┐           │
-│  │           │──│   DuckDB   │           │
-│  │           │  │ (tabular)  │           │
-│  └─────┬─────┘  └────────────┘           │
-│        │                                 │
+│  │  :8080    │  │   :6333    │           │
+│  │  (ext)    │  └────────────┘           │
+│  │  :80 int  │  ┌────────────┐           │
+│  │           │──│ PostgreSQL │           │
+│  │           │  │(meta+auth) │           │
+│  └─────┬─────┘  │   :5432    │           │
+│        │        └────────────┘           │
 │        │ Your LLM key                    │
 │        ▼                                 │
 │  ┌───────────┐                           │
@@ -105,7 +105,7 @@ vectorAIz runs as Docker containers on your machine:
 
 - **vectorAIz API** — FastAPI backend handling uploads, vectorization, search, and the AI copilot
 - **Qdrant** — vector database storing embeddings locally
-- **DuckDB** — embedded analytical database for tabular data storage and queries
+- **PostgreSQL** — metadata storage and authentication
 - **Your LLM** — queries go to your chosen provider using your own API key
 
 No data is sent to ai.market or any third party. Only metadata (if you choose to publish) leaves your network.
@@ -135,7 +135,7 @@ docker-compose up --build
 docker-compose exec vectoraiz-api pytest
 
 # API docs (auto-generated)
-open http://localhost:8000/docs
+open http://localhost:8080/docs
 ```
 
 The `docker-compose.yml` mounts `app/` as a volume — code changes reflect immediately without rebuilding.
@@ -147,7 +147,7 @@ vectorAIz can optionally connect to [ai.market](https://ai.market) to publish yo
 ## Requirements
 
 - **Docker** and **Docker Compose** (v2+)
-- **4GB RAM** minimum (8GB recommended)
+- **8 GB RAM** minimum (16 GB recommended for large datasets)
 - An API key from OpenAI, Anthropic, or Google (for LLM queries)
 
 ## License
