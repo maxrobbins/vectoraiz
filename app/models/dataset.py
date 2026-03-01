@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from sqlalchemy import BigInteger
 from sqlmodel import Field, SQLModel, Column, Text
 
 
@@ -43,7 +44,7 @@ class DatasetRecord(SQLModel, table=True):
     original_filename: str = Field(max_length=512)
     storage_filename: str = Field(max_length=512)
     file_type: str = Field(max_length=32)
-    file_size_bytes: int = Field(default=0)
+    file_size_bytes: int = Field(default=0, sa_column=Column(BigInteger, default=0))
     status: str = Field(default="uploaded", index=True)
     processed_path: Optional[str] = Field(default=None, nullable=True, max_length=1024)
     metadata_json: str = Field(default="{}", sa_column=Column(Text, default="{}"))

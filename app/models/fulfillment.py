@@ -14,6 +14,7 @@ IMPORTANT: Excludes tokens, auth headers, chunk payloads, and buyer PII (MP-M23)
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import BigInteger
 from sqlmodel import Field, SQLModel, Column, Text
 
 
@@ -35,7 +36,7 @@ class FulfillmentLog(SQLModel, table=True):
     status: str = Field(default="received", index=True)  # received → uploading → completed | failed | timed_out
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = Field(default=None, nullable=True)
-    file_size_bytes: Optional[int] = Field(default=None, nullable=True)
+    file_size_bytes: Optional[int] = Field(default=None, sa_column=Column(BigInteger, nullable=True))
     chunks_sent: Optional[int] = Field(default=None, nullable=True)
     error_code: Optional[str] = Field(default=None, nullable=True, max_length=64)
     error_message: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
