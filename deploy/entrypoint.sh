@@ -7,6 +7,9 @@ export TRANSFORMERS_OFFLINE=1
 export HF_HUB_DISABLE_TELEMETRY=1
 export DO_NOT_TRACK=1
 
+# BQ-URGENT: Force PyTorch backend to avoid ONNX MemoryError on ARM64 under Docker
+export SENTENCE_TRANSFORMERS_BACKEND=torch
+
 # MemoryError fix: cap native threadpools to prevent thread-explosion
 # under x86 emulation (OrbStack/Rosetta2 on Apple Silicon).
 : "${OMP_NUM_THREADS:=1}"

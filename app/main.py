@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 import logging
 import asyncio
 import os
+import sys
+import threading
 
 from app.config import settings
 
@@ -32,6 +34,16 @@ from app.services.serial_metering import (
 # BQ-127 (C5): Premium modules are NOT imported at module level.
 # DeviceCrypto, register_with_marketplace, stripe_connect_proxy,
 # allai, billing, integrations, webhooks are lazy-imported in connected mode only.
+
+def _custom_thread_excepthook(args):
+    """BQ-URGENT: Capture unhandled exceptions in background threads."""
+    logger = logging.getLogger("vectoraiz.thread_crash")
+    if issubclass(args.exc_type, MemoryError):
+        logger.critical("Fatal MemoryError in background thread '%s'", args.thread.name if args.thread else 'unknown', exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+    else:
+        logger.error("Unhandled exception in background thread '%s'", args.thread.name if args.thread else 'unknown', exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+
+threading.excepthook = _custom_thread_excepthook
 
 # BQ-123A: Initialize structured logging before any logger calls
 setup_logging()

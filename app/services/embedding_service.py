@@ -79,7 +79,8 @@ class EmbeddingService:
         start_time = time.time()
         print(f"Loading embedding model: {self._model_name}...", file=sys.stderr)
 
-        self._model = SentenceTransformer(self._model_name)
+        # Fallback keyword argument to force PyTorch over ONNX
+        self._model = SentenceTransformer(self._model_name, backend="torch")
 
         self._load_time = time.time() - start_time
         print(f"Model loaded in {self._load_time:.2f}s", file=sys.stderr)
