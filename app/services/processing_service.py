@@ -454,17 +454,6 @@ class ProcessingService:
     # BQ-VZ-LARGE-FILES: Streaming helpers
     # ------------------------------------------------------------------
 
-    def _is_large_file(self, record: DatasetRecord) -> bool:
-        """Check if a file exceeds the streaming threshold."""
-        threshold_bytes = settings.large_file_threshold_mb * 1024 * 1024
-        file_size = record.file_size_bytes or 0
-        if not file_size and record.upload_path:
-            try:
-                file_size = os.path.getsize(record.upload_path)
-            except OSError:
-                pass
-        return file_size >= threshold_bytes
-
     # ------------------------------------------------------------------
     # Main entry point
     # ------------------------------------------------------------------
@@ -502,10 +491,9 @@ class ProcessingService:
 
         try:
             file_type = record.file_type.lower()
-            is_large = self._is_large_file(record)
 
-            if is_large and file_type in (TABULAR_TYPES | DOCUMENT_TYPES):
-                # BQ-VZ-LARGE-FILES: streaming subprocess path
+            if file_type in (TABULAR_TYPES | DOCUMENT_TYPES):
+                # BQ-VZ-LARGE-FILES: Force all documents and tabular files through streaming subprocess
                 try:
                     await self._extract_streaming(record)
                     record.metadata["processing_mode"] = "streaming"
@@ -539,7 +527,7 @@ class ProcessingService:
                             f"({file_type}, {file_size / (1024**2):.0f}MB): {streaming_err}"
                         ) from streaming_err
             else:
-                # Standard in-memory path (unchanged for small files)
+                # Standard in-memory path (unchanged for small/special files)
                 record.metadata["processing_mode"] = "in_memory"
                 await self._extract_in_memory(record, file_type)
 
@@ -840,36 +828,56 @@ class ProcessingService:
     def _run_indexing(self, record: DatasetRecord) -> None:
         """Phase 2: chunk → embed → Qdrant via streaming for memory safety.
 
-        Always uses the streaming indexing path (index_streaming) so that
-        large datasets are processed one batch at a time without loading
-        the entire Parquet file into memory.
+        Always uses the streaming indexing path (index_streaming) isolated
+        in a ProcessWorkerManager subprocess. This prevents the primary API
+        server from encountering MemoryErrors when PyTorch embeddings process
+        heavy arrays.
         """
+        import time
         if not record.processed_path or not record.processed_path.exists():
             return
+
         try:
-            import pyarrow.parquet as pq
-            from app.services.indexing_service import get_indexing_service
+            from app.services.process_worker import get_worker_manager
+            from app.services.processing_queue import get_processing_queue
 
-            indexing_service = get_indexing_service()
-            pf = pq.ParquetFile(record.processed_path)
-            total_rows = pf.metadata.num_rows if pf.metadata else 0
-            chunk_iter = pf.iter_batches(batch_size=1000)
+            manager = get_worker_manager()
+            handle = manager.submit_indexing(record.id, record.processed_path)
 
-            def _indexing_progress(rows_done: int) -> None:
-                from app.services.processing_queue import get_processing_queue
-                pct = min((rows_done / max(total_rows, 1)) * 100, 99) if total_rows else 50
-                get_processing_queue().update_progress(
-                    record.id, "indexing", pct,
-                    f"{rows_done:,} / {total_rows:,} rows indexed",
-                )
+            timeout_s = settings.process_worker_timeout_s * 2  # Indexing gets 2x timeout
+            start_time = time.monotonic()
 
-            index_result = indexing_service.index_streaming(
-                dataset_id=record.id,
-                chunk_iterator=chunk_iter,
-                recreate_collection=True,
-                progress_callback=_indexing_progress,
-            )
-            record.metadata["index_status"] = index_result
+            # Subprocess spawned. Block to poll worker progress
+            while getattr(handle.future, "is_alive", lambda: False)():
+                elapsed = time.monotonic() - start_time
+                if elapsed > timeout_s:
+                    handle.cancel()
+                    raise TimeoutError(f"Indexing worker exceeded {timeout_s}s timeout")
+
+                progress = handle.get_progress()
+                if progress:
+                    state = progress.get("status")
+                    if state == "processing":
+                        get_processing_queue().update_progress(
+                            record.id, "indexing", progress.get("pct", 50),
+                            f"{progress.get('rows_done', 0):,} / {progress.get('total_rows', 0):,} rows indexed"
+                        )
+                    elif state == "completed":
+                        record.metadata["index_status"] = progress.get("result", {"status": "success"})
+                        break
+                    elif state == "error":
+                        raise RuntimeError(progress.get("error", "Unknown worker error"))
+                    elif state == "cancelled":
+                        raise InterruptedError("Worker cancelled externally")
+                time.sleep(1)
+                
+            # Ensures cleanup of handles
+            handle.wait()
+            
+            if "index_status" not in record.metadata:
+                # Fallback if completion packet missed but worker dead
+                record.metadata["index_status"] = {"status": "error", "error": "Index worker exited unexpectedly without completion packet"}
+
         except Exception as e:
             _log.error("Indexing failed for dataset %s: %s", record.id, e, exc_info=True)
             record.metadata["index_status"] = {"status": "error", "error": str(e)}

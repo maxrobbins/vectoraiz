@@ -146,6 +146,11 @@ async def upload_dataset(
                     magic_header += chunk[:8 - len(magic_header)]
                 await out_file.write(chunk)
 
+        # Update actual file size after write completes
+        record.file_size_bytes = bytes_written
+        storage_fn = record.upload_path.name
+        processing._save_record(record, storage_fn)
+
         # Magic-byte content-type validation (match bulk upload behavior)
         if not _check_magic_bytes(magic_header, extension):
             try:
