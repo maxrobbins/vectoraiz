@@ -15,7 +15,7 @@
 
 services:
   vectoraiz:
-    image: ghcr.io/aidotmarket/vectoraiz:${VECTORAIZ_VERSION:-v1.18.10}
+    image: ghcr.io/aidotmarket/vectoraiz:${VECTORAIZ_VERSION:-v1.18.11}
     ports:
       - "${VECTORAIZ_PORT:-8080}:80"
     volumes:
