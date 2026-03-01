@@ -39,14 +39,22 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 RUN PYTHONPATH=/install/lib/python3.11/site-packages \
     python -c "import nltk; nltk.download('punkt', download_dir='/install/nltk_data'); nltk.download('averaged_perceptron_tagger', download_dir='/install/nltk_data')"
 
-# Pre-download sentence-transformers model for air-gap operation
-# Uninstall onnxruntime so no .onnx artifacts baked into cache (prevents ARM64 MemoryError)
-RUN pip uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null; \
-    pip install --upgrade pip 2>/dev/null; \
-    PYTHONPATH=/install/lib/python3.11/site-packages \
+# Pre-download sentence-transformers model for air-gap operation.
+# Force PyTorch backend so no .onnx artifacts get baked into HF cache.
+RUN PYTHONPATH=/install/lib/python3.11/site-packages \
     HF_HOME=/install/hf_cache \
     SENTENCE_TRANSFORMERS_BACKEND=torch \
     python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', backend='torch')"
+
+# CRITICAL: Remove onnxruntime from the /install prefix.
+# pip uninstall won't work here because packages were installed with --prefix=/install,
+# not into the system site-packages. onnxruntime causes MemoryError on ARM64/QEMU
+# (Docker on Apple Silicon) by spawning background optimization threads that crash
+# under CPU emulation. Nuking the files ensures it can't be imported at runtime.
+RUN rm -rf /install/lib/python3.11/site-packages/onnxruntime* \
+           /install/lib/python3.11/site-packages/onnx \
+           /install/lib/python3.11/site-packages/onnx-*.dist-info \
+           /install/lib/python3.11/site-packages/onnxruntime-*.dist-info
 
 
 # ---- Stage 3: Runtime ----
