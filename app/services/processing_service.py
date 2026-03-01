@@ -174,8 +174,9 @@ def _record_to_db(rec: DatasetRecord, storage_filename: str):
     if not file_size and rec.upload_path:
         try:
             file_size = os.path.getsize(rec.upload_path)
+            _log.debug("_record_to_db: file_size_bytes was 0, resolved %d from disk for %s", file_size, rec.id)
         except OSError:
-            pass
+            _log.warning("_record_to_db: file_size_bytes=0 and cannot stat %s for %s", rec.upload_path, rec.id)
 
     return DBDatasetRecord(
         id=rec.id,
@@ -478,6 +479,13 @@ class ProcessingService:
             record.error = "Upload file not found"
             self._save_record(record, record.upload_path.name if record.upload_path else f"{dataset_id}")
             return record
+
+        # Populate file_size_bytes from disk so fallback size checks are accurate
+        if record.upload_path and record.upload_path.exists():
+            try:
+                record.file_size_bytes = os.path.getsize(record.upload_path)
+            except OSError:
+                pass
 
         # Check cancellation before starting
         if self._is_cancelled(dataset_id):
@@ -835,6 +843,17 @@ class ProcessingService:
         """
         import time
         if not record.processed_path or not record.processed_path.exists():
+            return
+
+        # Guard: defer indexing when available memory is critically low
+        import psutil
+        available_mb = psutil.virtual_memory().available / (1024 * 1024)
+        if available_mb < 500:
+            _log.warning(
+                "Low memory (%.0fMB free), deferring indexing for %s",
+                available_mb, record.id,
+            )
+            record.metadata["index_status"] = {"status": "deferred", "reason": "low_memory"}
             return
 
         try:
