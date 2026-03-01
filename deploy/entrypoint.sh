@@ -4,6 +4,8 @@ set -e
 # Air-gap: prevent HuggingFace Hub from phoning home (model is baked into image)
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+export HF_HUB_DISABLE_TELEMETRY=1
+export DO_NOT_TRACK=1
 
 # MemoryError fix: cap native threadpools to prevent thread-explosion
 # under x86 emulation (OrbStack/Rosetta2 on Apple Silicon).
