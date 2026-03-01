@@ -41,6 +41,10 @@ interface QueuedFile {
   datasetId: string | null;
   error: string | null;
   existingDatasetId: string | null;
+  /** Backend queue position — reported by FileRow via onMetadataUpdate */
+  queuePosition: number | null;
+  /** Processing phase: queued | extracting | indexing | null */
+  processingPhase: string | null;
 }
 
 interface FileUploadModalProps {
@@ -131,10 +135,11 @@ function useProcessingTracker(datasetId: string | null, onReady: () => void, onE
 }
 
 /** Individual file row that self-tracks processing */
-function FileRow({ item, onRemove, onStatusChange }: {
+function FileRow({ item, onRemove, onStatusChange, onMetadataUpdate }: {
   item: QueuedFile;
   onRemove: (id: string) => void;
   onStatusChange: (id: string, state: FileState, error?: string) => void;
+  onMetadataUpdate: (id: string, phase: string | null, queuePosition: number | null) => void;
 }) {
   const Icon = getFileIcon(item.file.name);
 
@@ -143,6 +148,13 @@ function FileRow({ item, onRemove, onStatusChange }: {
     () => onStatusChange(item.id, "complete"),
     (msg) => onStatusChange(item.id, "error", msg),
   );
+
+  // Report phase + queuePosition changes up to parent for sorting
+  useEffect(() => {
+    if (item.state === "processing") {
+      onMetadataUpdate(item.id, proc.phase ?? null, proc.queuePosition ?? null);
+    }
+  }, [proc.phase, proc.queuePosition, item.state]);
 
   return (
     <div className={cn(
@@ -279,6 +291,8 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
           datasetId: null,
           error: null,
           existingDatasetId: null,
+          queuePosition: null,
+          processingPhase: null,
         });
       }
 
@@ -329,6 +343,13 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
   const handleStatusChange = (id: string, state: FileState, error?: string) => {
     updateFile(id, { state, error: error ?? null });
   };
+
+  /** Called by FileRow when processing phase/queuePosition changes */
+  const handleMetadataUpdate = useCallback((id: string, phase: string | null, queuePosition: number | null) => {
+    setQueue((prev) => prev.map((f) =>
+      f.id === id ? { ...f, processingPhase: phase, queuePosition } : f
+    ));
+  }, []);
 
   /** Upload a single file via the single-file endpoint with real progress */
   const uploadOne = async (item: QueuedFile, allowDuplicate: boolean) => {
@@ -458,6 +479,50 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
   const pendingCount = queue.filter((f) => f.state === "pending").length;
   const totalSize = queue.filter((f) => f.state === "pending").reduce((sum, f) => sum + f.file.size, 0);
 
+  /**
+   * Sort queue for display:
+   * 1. uploading (active upload)
+   * 2. processing — actively extracting/indexing (not queued)
+   * 3. processing — queued, sorted by queuePosition ascending
+   * 4. pending (not yet uploaded)
+   * 5. duplicate
+   * 6. error / rejected
+   * 7. complete
+   */
+  const sortedQueue = [...queue].sort((a, b) => {
+    const statePriority: Record<FileState, number> = {
+      uploading: 0,
+      processing: 10,  // sub-sorted below
+      pending: 20,
+      duplicate: 30,
+      error: 40,
+      rejected: 50,
+      complete: 60,
+    };
+
+    let pa = statePriority[a.state] ?? 99;
+    let pb = statePriority[b.state] ?? 99;
+
+    // Sub-sort within processing: active (extracting/indexing) before queued
+    if (a.state === "processing") {
+      pa = a.processingPhase === "queued" ? 12 : 10;
+    }
+    if (b.state === "processing") {
+      pb = b.processingPhase === "queued" ? 12 : 10;
+    }
+
+    if (pa !== pb) return pa - pb;
+
+    // Within same priority, sort by queuePosition (lower = sooner to process)
+    if (a.queuePosition != null && b.queuePosition != null) {
+      return a.queuePosition - b.queuePosition;
+    }
+    if (a.queuePosition != null) return -1;
+    if (b.queuePosition != null) return 1;
+
+    return 0;
+  });
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
@@ -540,26 +605,16 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
             </div>
           )}
 
-          {/* File queue — sorted: active processing first, then queued, then pending, then done */}
+          {/* File queue — sorted by state priority, then phase, then queue position */}
           {hasFiles && (
             <div className={cn("space-y-2 overflow-y-auto", dialogSize ? "flex-1 min-h-[8rem]" : "max-h-64")}>
-              {[...queue].sort((a, b) => {
-                const priority: Record<FileState, number> = {
-                  uploading: 0,
-                  processing: 1,
-                  pending: 2,
-                  duplicate: 3,
-                  error: 4,
-                  rejected: 5,
-                  complete: 6,
-                };
-                return (priority[a.state] ?? 9) - (priority[b.state] ?? 9);
-              }).map((item) => (
+              {sortedQueue.map((item) => (
                 <FileRow
                   key={item.id}
                   item={item}
                   onRemove={removeFile}
                   onStatusChange={handleStatusChange}
+                  onMetadataUpdate={handleMetadataUpdate}
                 />
               ))}
             </div>
