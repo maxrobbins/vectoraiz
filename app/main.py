@@ -335,6 +335,14 @@ async def lifespan(app: FastAPI):
     _processing_queue = get_processing_queue()
     processing_queue_tasks = _processing_queue.start(wrapper=_safe_background_task)
 
+    # Preload embedding model to avoid MemoryError during first indexing
+    from app.services.embedding_service import get_embedding_service
+    try:
+        _emb_info = get_embedding_service().preload()
+        logger.info("Embedding model preloaded: %s", _emb_info)
+    except Exception as e:
+        logger.error("Embedding model preload failed (will retry on first use): %s", e)
+
     logger.info("API ready — all background tasks launched")
 
     yield
