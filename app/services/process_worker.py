@@ -714,11 +714,13 @@ class WorkerHandle:
 
         Yields raw items (bytes for RecordBatch, dict for TextBlock).
         Raises TimeoutError if worker exceeds timeout.
+        Raises RuntimeError if worker subprocess exits with non-zero code.
         """
+        import queue as _queue_mod
+
         try:
             while True:
                 elapsed = time.monotonic() - self._start_time
-                remaining = max(1, self.timeout_s - elapsed)
 
                 if elapsed > self.timeout_s:
                     self.cancel()
@@ -726,17 +728,19 @@ class WorkerHandle:
                         f"Worker exceeded {self.timeout_s}s timeout"
                     )
 
+                # Proactive subprocess health check before blocking on queue.
+                # This catches fast failures (e.g. unsupported file type) without
+                # waiting for a queue timeout.
+                if not self._worker_alive():
+                    yield from self._drain_queue()
+                    self._check_worker_exit()
+                    return
+
+                remaining = max(1, self.timeout_s - elapsed)
                 try:
-                    item = self.data_queue.get(timeout=min(remaining, 30))
-                except Exception:
-                    # Check if worker exited
-                    if not self._worker_alive():
-                        exitcode = getattr(self.future, "exitcode", None)
-                        if exitcode and exitcode != 0:
-                            raise RuntimeError(
-                                f"Worker crashed with exit code {exitcode}"
-                            )
-                        return
+                    item = self.data_queue.get(timeout=min(remaining, 5.0))
+                except _queue_mod.Empty:
+                    # Timeout — loop back to check subprocess health
                     continue
 
                 if item is None:  # sentinel
@@ -744,6 +748,48 @@ class WorkerHandle:
                 yield item
         finally:
             self._cleanup()
+
+    def _drain_queue(self):
+        """Yield any remaining items the subprocess queued before exiting."""
+        import queue as _queue_mod
+
+        while True:
+            try:
+                item = self.data_queue.get_nowait()
+            except _queue_mod.Empty:
+                return
+            if item is None:  # sentinel
+                return
+            yield item
+
+    def _check_worker_exit(self) -> None:
+        """Check worker exit status and raise RuntimeError if it failed.
+
+        Call only after _worker_alive() returns False.
+        """
+        exitcode = getattr(self.future, "exitcode", None)
+        if exitcode is not None and exitcode != 0:
+            error_detail = self._read_worker_error()
+            if exitcode < 0:
+                sig = -exitcode
+                msg = f"Worker subprocess killed by signal {sig}"
+            else:
+                msg = f"Worker subprocess exited with code {exitcode}"
+            if error_detail:
+                msg += f": {error_detail}"
+            raise RuntimeError(msg)
+
+    def _read_worker_error(self) -> str:
+        """Read error details from the progress pipe after worker death."""
+        error_msg = ""
+        try:
+            while self.progress_conn.poll(0):
+                msg = self.progress_conn.recv()
+                if isinstance(msg, dict) and msg.get("status") == "error":
+                    error_msg = msg.get("error", "")
+        except (EOFError, BrokenPipeError):
+            pass
+        return error_msg
 
     def get_progress(self) -> Optional[Dict[str, Any]]:
         """Non-blocking poll for latest progress from worker."""
