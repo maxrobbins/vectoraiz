@@ -10,8 +10,7 @@ IPC:
 - Pipe (control): cancel signal from parent
 
 Memory limits:
-- Linux: resource.setrlimit(RLIMIT_AS)
-- macOS/other: soft RSS monitoring via psutil
+- Parent-side MemoryMonitor (psutil RSS) — RLIMIT_AS not used (see _set_memory_limit)
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
-import platform
 import signal
 import sys
 import threading
@@ -42,24 +40,20 @@ logger = logging.getLogger(__name__)
 
 
 def _set_memory_limit(limit_mb: int) -> None:
-    """Set per-process memory limit.
+    """Configure per-process memory awareness.
 
-    Linux: hard limit via resource.setrlimit.
-    macOS/other: no-op (monitored externally by parent via psutil).
+    RLIMIT_AS is intentionally NOT used: forked subprocesses inherit the
+    parent's virtual address space (typically 4-5GB with PyTorch loaded),
+    which already exceeds any reasonable RLIMIT_AS value.  Setting it
+    causes immediate MemoryError on any new allocation — even small ones.
+
+    Instead, the parent-side MemoryMonitor (psutil-based) watches RSS and
+    sends SIGTERM then SIGKILL if the subprocess exceeds limit_mb * 2.
     """
-    if platform.system() == "Linux":
-        try:
-            import resource
-            limit_bytes = limit_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
-            logger.info("Worker memory limit set to %dMB via RLIMIT_AS", limit_mb)
-        except (ValueError, OSError) as e:
-            logger.warning("Could not set RLIMIT_AS: %s", e)
-    else:
-        logger.info(
-            "Worker on %s — memory limit (%dMB) monitored externally via psutil",
-            platform.system(), limit_mb,
-        )
+    logger.info(
+        "Worker memory budget: %dMB (enforced by parent MemoryMonitor, not RLIMIT_AS)",
+        limit_mb,
+    )
 
 
 class MemoryMonitor:
