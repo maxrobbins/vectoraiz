@@ -1,14 +1,12 @@
 """
 Bounded-concurrency file processing queue.
 
-Limits concurrent dataset processing to MAX_CONCURRENT (default 2) to
-prevent CPU/memory starvation that blocks the API event loop. All file
-processing requests are routed through this queue instead of running as
-unbounded concurrent background tasks.
+Auto-detects optimal concurrency from available CPU cores and memory,
+then spawns N worker_loop tasks with an N-sized semaphore. Override via
+``VECTORAIZ_MAX_CONCURRENT_PROCESSING`` env var.
 
-Before this queue, uploading 10 files spawned 10 concurrent processing
-tasks — each running embedding computation via onnxruntime — which
-consumed 1300%+ CPU and starved the event loop for 2-5 minutes.
+All file processing requests are routed through this queue instead of
+running as unbounded concurrent background tasks.
 """
 
 import asyncio
@@ -22,6 +20,87 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Auto-detect optimal concurrency from system resources
+# ---------------------------------------------------------------------------
+
+def auto_detect_concurrency() -> int:
+    """Detect optimal processing queue concurrency from CPU and memory.
+
+    - Reserve 1.5 GB for the base system (API server, Postgres, Qdrant, OS).
+    - Each processing worker needs ~500 MB (embedding model + DuckDB + buffers).
+    - Hard cap at 8, floor at 1.
+    - ``VECTORAIZ_MAX_CONCURRENT_PROCESSING`` env var overrides when set.
+    """
+    env_key = "VECTORAIZ_MAX_CONCURRENT_PROCESSING"
+    env_val = os.environ.get(env_key)
+
+    if env_val is not None:
+        try:
+            n = max(1, int(env_val))
+        except (ValueError, TypeError):
+            n = 2
+        logger.info(
+            "Processing concurrency override: %d workers (env %s=%s)",
+            n, env_key, env_val,
+        )
+        return n
+
+    # --- CPU-based estimate ---
+    cores = os.cpu_count() or 2
+    cpu_based = max(1, cores // 2)
+
+    # --- Memory-based estimate ---
+    available_gb = _get_available_memory_gb()
+    memory_based = max(1, int((available_gb - 1.5) / 0.5)) if available_gb > 1.5 else 1
+
+    optimal = max(1, min(memory_based, cpu_based, 8))
+
+    logger.info(
+        "Auto-detected concurrency: %d workers "
+        "(cpus=%d, memory=%.1fGB, env_override=%s)",
+        optimal, cores, available_gb, env_val,
+    )
+    return optimal
+
+
+def _get_available_memory_gb() -> float:
+    """Return available system memory in GB.
+
+    Reads ``/proc/meminfo`` (Docker / Linux cgroup-aware), then falls back
+    to ``os.sysconf`` page-size heuristic, then ``psutil``.
+    """
+    # 1) /proc/meminfo — works inside Docker (respects cgroup limits)
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) / (1024 * 1024)  # kB → GB
+            # MemAvailable missing (old kernels) — fall back to MemTotal
+            f.seek(0)
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) / (1024 * 1024)
+    except (OSError, ValueError):
+        pass
+
+    # 2) os.sysconf (macOS / other POSIX)
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        if pages > 0 and page_size > 0:
+            return (pages * page_size) / (1024 ** 3)
+    except (ValueError, OSError, AttributeError):
+        pass
+
+    # 3) psutil last resort
+    try:
+        import psutil
+        return psutil.virtual_memory().total / (1024 ** 3)
+    except Exception:
+        return 4.0  # conservative fallback
+
+
 @dataclass
 class _QueueItem:
     dataset_id: str
@@ -33,11 +112,10 @@ class _QueueItem:
 class ProcessingQueue:
     """Singleton queue that processes datasets with bounded concurrency."""
 
-    _MAX_CONCURRENT = int(os.getenv("VECTORAIZ_MAX_CONCURRENT_PROCESSING", "2"))
-
     def __init__(self):
+        self._concurrency = auto_detect_concurrency()
         self._queue: asyncio.Queue[_QueueItem] = asyncio.Queue()
-        self._semaphore = asyncio.Semaphore(self._MAX_CONCURRENT)
+        self._semaphore = asyncio.Semaphore(self._concurrency)
         self._current: Optional[_QueueItem] = None
         self._worker_tasks: List[asyncio.Task] = []
         self._progress: Dict[str, Dict[str, Any]] = {}
@@ -103,7 +181,7 @@ class ProcessingQueue:
 
     async def worker_loop(self):
         """Pull items from the queue and process with bounded concurrency."""
-        logger.info("Processing queue worker started (max_concurrent=%d)", self._MAX_CONCURRENT)
+        logger.info("Processing queue worker started (max_concurrent=%d)", self._concurrency)
         while True:
             item = await self._queue.get()
             self._current = item
@@ -176,17 +254,15 @@ class ProcessingQueue:
         processing = get_processing_service()
         await processing.run_index_phase(dataset_id)
 
-    _CONCURRENCY = 1  # Single worker: prevents concurrent embedding OOM spikes
-
     def start(self, wrapper=None) -> List[asyncio.Task]:
-        """Start worker tasks (bounded by _MAX_CONCURRENT semaphore).
+        """Start worker tasks matching auto-detected concurrency.
 
         Args:
             wrapper: Optional async wrapper(name, coro) for error isolation.
         """
         # Clean up finished tasks
         self._worker_tasks = [t for t in self._worker_tasks if not t.done()]
-        while len(self._worker_tasks) < self._CONCURRENCY:
+        while len(self._worker_tasks) < self._concurrency:
             idx = len(self._worker_tasks)
             coro = self.worker_loop()
             if wrapper:
