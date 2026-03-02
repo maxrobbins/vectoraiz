@@ -2,9 +2,12 @@
 BQ-123B: Diagnostic bundle API endpoint.
 
 POST /api/diagnostics/bundle — generates a ZIP diagnostic bundle.
+GET  /api/diagnostics/threads — faulthandler thread dump for debugging.
 Requires authentication. Rate limited to 1 per minute.
 """
 import asyncio
+import faulthandler
+import io
 import logging
 import time
 from datetime import datetime, timezone
@@ -77,3 +80,32 @@ async def download_diagnostic_bundle(
             "Content-Disposition": f'attachment; filename="{filename}"',
         },
     )
+
+
+@router.get("/diagnostics/threads")
+async def dump_threads(
+    _user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Dump tracebacks for all threads via faulthandler.
+
+    Useful for diagnosing deadlocks and blocked event loops.
+    Requires authentication.
+    """
+    buffer = io.StringIO()
+    faulthandler.dump_traceback(file=buffer, all_threads=True)
+    return {"thread_dump": buffer.getvalue()}
+
+
+
+@router.get("/diagnostics/threads")
+async def dump_threads(
+    _user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Dump tracebacks for all threads via faulthandler.
+
+    Useful for diagnosing deadlocks and blocked event loops.
+    Requires authentication.
+    """
+    buffer = io.StringIO()
+    faulthandler.dump_traceback(file=buffer, all_threads=True)
+    return {"thread_dump": buffer.getvalue()}

@@ -15,6 +15,9 @@
 
 services:
   vectoraiz:
+    build:
+      context: .
+      dockerfile: Dockerfile.customer
     image: ghcr.io/aidotmarket/vectoraiz:${VECTORAIZ_VERSION:-v1.20.5}
     ports:
       - "${VECTORAIZ_PORT:-8080}:80"
@@ -46,6 +49,8 @@ services:
       #   - Docker Desktop (Mac/Win): host.docker.internal
       #   - Linux: add extra_hosts: ["host.docker.internal:host-gateway"]
       #   - Same Docker network: use the service name (e.g., "postgres")
+    cap_add:
+      - SYS_PTRACE
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:80/api/health || exit 1"]
       interval: 30s

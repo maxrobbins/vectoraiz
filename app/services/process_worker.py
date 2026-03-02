@@ -22,6 +22,7 @@ import signal
 import sys
 import threading
 import time
+import traceback as _traceback_mod
 from dataclasses import asdict
 from multiprocessing import Queue
 from multiprocessing.connection import Connection
@@ -32,10 +33,24 @@ from typing import Any, Dict, Optional
 # Fork inherits the parent's uvicorn event loop state which can cause deadlocks.
 _mp_ctx = multiprocessing.get_context("spawn")
 
-import psutil
+import os, psutil
 import pyarrow as pa
 
 logger = logging.getLogger(__name__)
+
+
+def log_mem_state(phase: str):
+    try:
+        process = psutil.Process(os.getpid())
+        mem = process.memory_info()
+        logger.info(
+            f"PHASE [{os.getpid()}] {phase} | "
+            f"RSS: {mem.rss / 1024**2:.1f}MB | "
+            f"VMS: {mem.vms / 1024**2:.1f}MB | "
+            f"Threads: {process.num_threads()}"
+        )
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -223,16 +238,17 @@ def run_tabular_worker(
     Yields RecordBatch chunks into data_queue, sends progress via progress_conn.
     Checks control_conn for cancel signals between chunks.
     """
-    _set_memory_limit(memory_limit_mb)
-
-    # Import here to avoid loading heavy libs in parent until needed
-    from app.services.streaming_processor import (
-        StreamingTabularProcessor,
-        check_file_size,
-        check_zip_bomb,
-    )
-
     try:
+        _set_memory_limit(memory_limit_mb)
+        log_mem_state("Worker Start:tabular")
+
+        # Import here to avoid loading heavy libs in parent until needed
+        from app.services.streaming_processor import (
+            StreamingTabularProcessor,
+            check_file_size,
+            check_zip_bomb,
+        )
+
         fp = Path(filepath)
         check_file_size(fp)
         check_zip_bomb(fp)
@@ -269,6 +285,10 @@ def run_tabular_worker(
             chunks_sent += 1
             rows_sent += batch.num_rows
 
+            # Periodic memory snapshot during chunk processing
+            if chunks_sent % 50 == 0:
+                log_mem_state(f"tabular_chunk_{chunks_sent}")
+
             # Send progress at most every 5 seconds
             now = time.monotonic()
             if now - last_progress >= 5:
@@ -291,13 +311,15 @@ def run_tabular_worker(
         })
 
     except Exception as e:
-        logger.exception("Tabular worker failed: %s", e)
+        logger.error(f"Tabular worker failed: {e}")
         _safe_progress_send(progress_conn, {
             "status": "error",
             "error": str(e),
-            "error_type": type(e).__name__,
+            "traceback": _traceback_mod.format_exc()
         })
-        _safe_queue_put(data_queue, None, control_conn)  # sentinel so parent doesn't hang
+        sys.exit(1)
+    finally:
+        log_mem_state("Worker Exit:tabular")
 
 
 def run_document_worker(
@@ -312,14 +334,15 @@ def run_document_worker(
 
     Yields TextBlock dicts into data_queue, sends progress via progress_conn.
     """
-    _set_memory_limit(memory_limit_mb)
-
-    from app.services.streaming_processor import (
-        StreamingDocumentProcessor,
-        check_file_size,
-    )
-
     try:
+        _set_memory_limit(memory_limit_mb)
+        log_mem_state("Worker Start:document")
+
+        from app.services.streaming_processor import (
+            StreamingDocumentProcessor,
+            check_file_size,
+        )
+
         fp = Path(filepath)
         check_file_size(fp)
 
@@ -351,6 +374,10 @@ def run_document_worker(
 
             chunks_sent += 1
 
+            # Periodic memory snapshot during chunk processing
+            if chunks_sent % 50 == 0:
+                log_mem_state(f"document_chunk_{chunks_sent}")
+
             now = time.monotonic()
             if now - last_progress >= 5:
                 _safe_progress_send(progress_conn, {
@@ -369,13 +396,15 @@ def run_document_worker(
         })
 
     except Exception as e:
-        logger.exception("Document worker failed: %s", e)
+        logger.error(f"Document worker failed: {e}")
         _safe_progress_send(progress_conn, {
             "status": "error",
             "error": str(e),
-            "error_type": type(e).__name__,
+            "traceback": _traceback_mod.format_exc()
         })
-        _safe_queue_put(data_queue, None, control_conn)
+        sys.exit(1)
+    finally:
+        log_mem_state("Worker Exit:document")
 
 
 def run_indexing_worker(
@@ -390,27 +419,31 @@ def run_indexing_worker(
     Reads from the Parquet file and indices batches via IndexingService.
     Sends progress updates back to the parent and handles cancellation.
     """
-    _set_memory_limit(memory_limit_mb)
-
-    import pyarrow.parquet as pq
-    from app.config import settings
-    from app.services.indexing_service import get_indexing_service
-
-    # Path validation: prevent traversal and symlink attacks
-    fp = Path(parquet_path).resolve()
-    processed_dir = Path(settings.processed_directory).resolve()
-    if not str(fp).startswith(str(processed_dir)):
-        raise ValueError(f"Path traversal detected: {parquet_path} resolves outside {processed_dir}")
-    if fp.is_symlink():
-        raise ValueError(f"Symlink detected: {parquet_path}")
-    if not fp.exists() or not fp.is_file():
-        raise ValueError(f"Not a regular file: {parquet_path}")
-
     try:
+        _set_memory_limit(memory_limit_mb)
+        log_mem_state("Worker Start:indexing")
+
+        import pyarrow.parquet as pq
+        from app.config import settings
+        from app.services.indexing_service import get_indexing_service
+
+        # Path validation: prevent traversal and symlink attacks
+        fp = Path(parquet_path).resolve()
+        processed_dir = Path(settings.processed_directory).resolve()
+        if not str(fp).startswith(str(processed_dir)):
+            raise ValueError(f"Path traversal detected: {parquet_path} resolves outside {processed_dir}")
+        if fp.is_symlink():
+            raise ValueError(f"Symlink detected: {parquet_path}")
+        if not fp.exists() or not fp.is_file():
+            raise ValueError(f"Not a regular file: {parquet_path}")
+
+
         indexing_service = get_indexing_service()
         pf = pq.ParquetFile(parquet_path)
         total_rows = pf.metadata.num_rows if pf.metadata else 0
         chunk_iter = pf.iter_batches(batch_size=1000)
+
+        _rows_logged = [0]  # mutable counter for periodic mem snapshots
 
         def _indexing_progress(rows_done: int) -> None:
             # Check for cancel signal from parent
@@ -418,7 +451,12 @@ def run_indexing_worker(
                 msg = control_conn.recv()
                 if msg == "cancel":
                     raise InterruptedError("cancelled")
-                    
+
+            # Periodic memory snapshot every 5000 rows
+            if rows_done - _rows_logged[0] >= 5000:
+                log_mem_state(f"indexing_rows_{rows_done}")
+                _rows_logged[0] = rows_done
+
             pct = min((rows_done / max(total_rows, 1)) * 100, 99) if total_rows else 50
             _safe_progress_send(progress_conn, {
                 "status": "processing",
@@ -434,20 +472,24 @@ def run_indexing_worker(
             recreate_collection=True,
             progress_callback=_indexing_progress,
         )
-        
+
         _safe_progress_send(progress_conn, {
             "status": "completed",
             "result": result
         })
-        
+
     except Exception as e:
         status = "cancelled" if isinstance(e, InterruptedError) else "error"
-        logger.exception("Indexing worker failed: %s", e)
+        logger.error(f"Indexing worker failed: {e}")
         _safe_progress_send(progress_conn, {
             "status": status,
             "error": str(e),
-            "error_type": type(e).__name__,
+            "traceback": _traceback_mod.format_exc()
         })
+        if status == "error":
+            sys.exit(1)
+    finally:
+        log_mem_state("Worker Exit:indexing")
 
 
 # ---------------------------------------------------------------------------

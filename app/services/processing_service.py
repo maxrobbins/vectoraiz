@@ -10,7 +10,7 @@ from enum import Enum
 import json
 import csv
 
-import psutil
+import os, psutil
 
 from app.config import settings
 from app.models.dataset import DatasetStatus
@@ -20,11 +20,16 @@ from app.utils.sanitization import sanitize_filename, sql_quote_literal
 _log = logging.getLogger(__name__)
 
 
-def _log_mem(phase: str) -> None:
-    """Log current process RSS at a phase boundary."""
+def log_mem_state(phase: str):
     try:
-        rss_mb = psutil.Process().memory_info().rss / (1024 * 1024)
-        _log.info("mem[%s] rss=%.1fMB", phase, rss_mb)
+        process = psutil.Process(os.getpid())
+        mem = process.memory_info()
+        _log.info(
+            f"PHASE [{os.getpid()}] {phase} | "
+            f"RSS: {mem.rss / 1024**2:.1f}MB | "
+            f"VMS: {mem.vms / 1024**2:.1f}MB | "
+            f"Threads: {process.num_threads()}"
+        )
     except Exception:
         pass
 
@@ -482,6 +487,7 @@ class ProcessingService:
         the streaming subprocess path. Falls back to in-memory for small files
         if streaming fails (M10 graceful degradation).
         """
+        log_mem_state("Pre-Processing")
         record = self.get_dataset(dataset_id)
         if not record:
             raise ValueError(f"Dataset {dataset_id} not found")
@@ -551,6 +557,7 @@ class ProcessingService:
                 record.metadata["processing_mode"] = "in_memory"
                 await asyncio.to_thread(self._extract_in_memory, record, file_type)
 
+            log_mem_state("Post-Extraction")
             # Cache preview data after extraction
             self._cache_preview(record)
 
@@ -601,7 +608,7 @@ class ProcessingService:
 
     def _extract_in_memory(self, record: DatasetRecord, file_type: str) -> None:
         """Standard in-memory extraction path (unchanged from original)."""
-        _log_mem("in_memory_start")
+        log_mem_state("in_memory_start")
         if file_type in TABULAR_TYPES:
             self._extract_tabular(record)
         elif file_type in DOCUMENT_TYPES:
@@ -612,7 +619,7 @@ class ProcessingService:
             self._process_text(record)
         else:
             raise ValueError(f"Unsupported file type: {file_type}")
-        _log_mem("in_memory_done")
+        log_mem_state("in_memory_done")
 
     def _extract_streaming(self, record: DatasetRecord) -> None:
         """BQ-VZ-LARGE-FILES: Extract via streaming subprocess.
@@ -621,7 +628,7 @@ class ProcessingService:
         document files through StreamingDocumentProcessor, both running
         in isolated subprocesses via ProcessWorkerManager.
         """
-        _log_mem("streaming_start")
+        log_mem_state("Worker Start:streaming")
         import pyarrow as pa
         import pyarrow.parquet as pq
         from app.services.process_worker import (
@@ -847,7 +854,7 @@ class ProcessingService:
             )
         else:
             raise ValueError(f"Streaming not supported for file type: {file_type}")
-        _log_mem("streaming_done")
+        log_mem_state("Worker Exit:streaming")
 
     def _run_indexing(self, record: DatasetRecord) -> None:
         """Phase 2: chunk → embed → Qdrant via streaming for memory safety.
@@ -882,8 +889,22 @@ class ProcessingService:
             timeout_s = settings.process_worker_timeout_s * 2  # Indexing gets 2x timeout
             start_time = time.monotonic()
 
+            log_mem_state("Pre-Indexing")
+
             # Subprocess spawned. Block to poll worker progress
+            _exitcode_logged = False
             while getattr(handle.future, "is_alive", lambda: False)():
+                proc = handle.future
+                proc_exitcode = getattr(proc, "exitcode", None)
+                if proc_exitcode is not None and not _exitcode_logged:
+                    _exitcode_logged = True
+                    if proc_exitcode == -9:
+                        _log.error(f"Indexing subprocess OOM-killed (SIGKILL) for record {record.id}")
+                    elif proc_exitcode < 0:
+                        _log.error(f"Indexing subprocess killed by signal {-proc_exitcode} for record {record.id}")
+                    elif proc_exitcode > 0:
+                        _log.error(f"Indexing subprocess exited with code {proc_exitcode} for record {record.id}")
+
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     handle.cancel()
@@ -905,13 +926,26 @@ class ProcessingService:
                     elif state == "cancelled":
                         raise InterruptedError("Worker cancelled externally")
                 time.sleep(1)
-                
+
             # Ensures cleanup of handles
             handle.wait()
-            
+
+            # Exitcode diagnostics — capture WHY the subprocess died
+            proc_exitcode = getattr(handle.future, "exitcode", None)
+            if proc_exitcode is not None and proc_exitcode != 0:
+                if proc_exitcode == -9:
+                    _log.error("Indexing subprocess OOM-killed (SIGKILL) for record %s", record.id)
+                elif proc_exitcode < 0:
+                    _log.error("Indexing subprocess killed by signal %d for record %s", -proc_exitcode, record.id)
+                else:
+                    _log.error("Indexing subprocess exited with code %d for record %s", proc_exitcode, record.id)
+
             if "index_status" not in record.metadata:
                 # Fallback if completion packet missed but worker dead
-                record.metadata["index_status"] = {"status": "error", "error": "Index worker exited unexpectedly without completion packet"}
+                exit_detail = f" (exitcode={proc_exitcode})" if proc_exitcode is not None else ""
+                record.metadata["index_status"] = {"status": "error", "error": f"Index worker exited unexpectedly without completion packet{exit_detail}"}
+
+            log_mem_state("Post-Indexing")
 
         except Exception as e:
             _log.error("Indexing failed for dataset %s: %s", record.id, e, exc_info=True)

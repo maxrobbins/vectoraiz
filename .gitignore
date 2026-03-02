@@ -53,3 +53,7 @@ AUDIT-FIX-QUEUE.md
 # OS
 .DS_Store
 Thumbs.db
+
+CLAUDE.md
+task_state.md
+*.log

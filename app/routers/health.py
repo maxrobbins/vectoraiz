@@ -31,7 +31,8 @@ COMPONENT_TIMEOUT = 2.0  # seconds
 @router.get("/health")
 async def health_check():
     """Cheap health check — no network calls."""
-    t0 = time.perf_counter()
+    import time
+    start = time.perf_counter()
     data = {
         "status": "ok",
         "version": APP_VERSION,
@@ -39,9 +40,9 @@ async def health_check():
         "uptime_s": round(get_uptime_s(), 1),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    lag = time.perf_counter() - t0
-    if lag > 0.5:
-        logger.warning("event_loop_lag_detected: %.3fs in /health handler", lag)
+    duration = time.perf_counter() - start
+    if duration > 0.5:
+        logger.warning(f"EVENT LOOP LAG: /health took {duration:.3f}s. Possible blocking call.")
     return data
 
 
