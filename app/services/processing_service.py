@@ -98,18 +98,19 @@ class DatasetRecord:
 # File type categories
 TABULAR_TYPES = {'csv', 'tsv', 'json', 'parquet'}
 DOCUMENT_TYPES = {
-    # Existing (Unstructured)
+    # Streaming-capable (pypdfium2, python-docx, python-pptx)
     'pdf', 'docx', 'doc', 'pptx', 'ppt',
-    # Tika-powered (BQ-TIKA)
+    # Native lightweight extractors (pure Python, no Tika/Unstructured)
     'rtf', 'odt', 'ods', 'odp', 'epub',
     'eml', 'msg', 'mbox',
     'xml', 'rss',
-    'pages', 'numbers', 'key',
-    'wps', 'wpd',
     'ics', 'vcf',
 }
 SPREADSHEET_TYPES = {'xlsx', 'xls'}
 TEXT_TYPES = {'txt', 'md', 'html', 'htm'}
+
+# All types we can actually process (used for upload pre-validation)
+PROCESSABLE_TYPES = TABULAR_TYPES | DOCUMENT_TYPES | SPREADSHEET_TYPES | TEXT_TYPES
 
 
 def _db_to_record(db_row) -> DatasetRecord:
@@ -564,7 +565,10 @@ class ProcessingService:
 
         except Exception as e:
             record.status = DatasetStatus.ERROR
-            record.error = str(e)
+            # Human-readable error (no stack traces)
+            err_msg = str(e).split("\n")[0].strip()[:300]
+            record.error = err_msg if err_msg else type(e).__name__
+            _log.error("Processing failed for %s: %s", dataset_id, e, exc_info=True)
             record.updated_at = datetime.now(timezone.utc)
             storage_fn = record.upload_path.name if record.upload_path else f"{dataset_id}"
             self._save_record(record, storage_fn)
@@ -600,7 +604,8 @@ class ProcessingService:
             record.updated_at = datetime.now(timezone.utc)
         except Exception as e:
             record.status = DatasetStatus.ERROR
-            record.error = f"Indexing failed: {e}"
+            err_detail = str(e).split("\n")[0].strip()[:200]
+            record.error = f"Indexing failed: {err_detail}" if err_detail else "Indexing failed"
             record.updated_at = datetime.now(timezone.utc)
 
         storage_fn = record.upload_path.name if record.upload_path else f"{dataset_id}"
@@ -991,7 +996,8 @@ class ProcessingService:
             record.updated_at = datetime.now(timezone.utc)
         except Exception as e:
             record.status = DatasetStatus.ERROR
-            record.error = f"Indexing failed: {e}"
+            err_detail = str(e).split("\n")[0].strip()[:200]
+            record.error = f"Indexing failed: {err_detail}" if err_detail else "Indexing failed"
             record.updated_at = datetime.now(timezone.utc)
 
         self._save_record(record, storage_fn)

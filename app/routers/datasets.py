@@ -43,19 +43,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-SUPPORTED_EXTENSIONS = {
-    # Data formats (pandas/DuckDB pipeline)
-    '.csv', '.tsv', '.json', '.parquet', '.xlsx', '.xls',
-    # Documents (Unstructured)
-    '.pdf', '.docx', '.doc', '.pptx', '.ppt',
-    # Plain text
-    '.txt', '.md', '.html', '.htm',
-    # Native document formats (BQ-VZ-PERF Phase 3)
-    '.rtf', '.odt', '.ods', '.odp', '.epub',
-    '.eml', '.msg', '.mbox',
-    '.xml', '.rss',
-    '.ics', '.vcf',
-}
+from app.services.processing_service import PROCESSABLE_TYPES
+
+# Build dotted extension set from the canonical PROCESSABLE_TYPES
+SUPPORTED_EXTENSIONS = {f'.{t}' for t in PROCESSABLE_TYPES}
 
 
 def get_file_extension(filename: str) -> str:
@@ -68,7 +59,13 @@ async def list_datasets(
     processing: ProcessingService = Depends(get_processing_service)
 ):
     """List all datasets with their processing status."""
-    records = processing.list_datasets()
+    try:
+        records = await asyncio.wait_for(
+            asyncio.to_thread(processing.list_datasets),
+            timeout=5.0,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Database query timed out")
     return {
         "datasets": [r.to_dict() for r in records],
         "count": len(records)
@@ -97,10 +94,14 @@ async def upload_dataset(
     if fname_err:
         raise HTTPException(status_code=422, detail=f"Invalid filename: {fname_err}")
 
-    # Validate file extension
+    # Validate file extension against processable types
     extension = get_file_extension(file.filename)
     if extension not in SUPPORTED_EXTENSIONS:
-        raise VectorAIzError("VAI-ING-001", detail=f"Unsupported file type: {extension}")
+        supported_list = sorted(t for t in PROCESSABLE_TYPES)
+        raise HTTPException(
+            status_code=422,
+            detail=f"File type '{extension}' is not supported. Supported types: {', '.join(supported_list)}",
+        )
 
     file_type = extension[1:]  # Remove the dot
 

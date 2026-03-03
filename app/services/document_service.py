@@ -46,7 +46,14 @@ class LocalDocumentProcessor(DocumentProcessor):
     Handles PDF, Word, PowerPoint, and other document formats.
     """
     
-    SUPPORTED_EXTENSIONS = {'.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.txt', '.md', '.html', '.htm'}
+    SUPPORTED_EXTENSIONS = {
+        '.pdf', '.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls',
+        '.txt', '.md', '.html', '.htm',
+        # Native lightweight extractors
+        '.rtf', '.odt', '.ods', '.odp', '.epub',
+        '.eml', '.msg', '.mbox',
+        '.xml', '.rss', '.ics', '.vcf',
+    }
     
     def __init__(self):
         self._check_dependencies()

@@ -70,6 +70,31 @@ def _process_xml(filepath: Path) -> Dict[str, Any]:
     return _build_result(texts or [""], filepath)
 
 
+def _process_rss(filepath: Path) -> Dict[str, Any]:
+    """Parse RSS/Atom feeds using feedparser for better semantic extraction."""
+    try:
+        import feedparser
+    except ImportError:
+        # Fall back to generic XML extraction if feedparser unavailable
+        return _process_xml(filepath)
+
+    feed = feedparser.parse(str(filepath))
+    parts: List[str] = []
+
+    if feed.feed.get("title"):
+        parts.append(f"Feed: {feed.feed.title}")
+
+    for entry in feed.entries:
+        if entry.get("title"):
+            parts.append(entry.title)
+        if entry.get("summary"):
+            parts.append(entry.summary)
+        elif entry.get("description"):
+            parts.append(entry.description)
+
+    return _build_result(parts or [""], filepath)
+
+
 def _process_eml(filepath: Path) -> Dict[str, Any]:
     raw = filepath.read_bytes()
     msg = email.message_from_bytes(raw)
@@ -252,7 +277,7 @@ def _process_msg(filepath: Path) -> Dict[str, Any]:
 _HANDLERS = {
     "rtf": _process_rtf,
     "xml": _process_xml,
-    "rss": _process_xml,  # RSS is XML
+    "rss": _process_rss,  # RSS/Atom via feedparser
     "eml": _process_eml,
     "mbox": _process_mbox,
     "ics": _process_ics,

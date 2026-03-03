@@ -315,7 +315,12 @@ class StreamingDocumentProcessor:
         elif self.file_type in ("pptx", "ppt"):
             yield from self._iter_pptx()
         else:
-            raise ValueError(f"Unsupported document type for streaming: {self.file_type}")
+            # Route native formats (RTF, ICS, VCF, etc.) through lightweight extractors
+            from app.services.format_extractors import can_extract, extract_text_blocks
+            if can_extract(self.file_type):
+                yield from extract_text_blocks(self.filepath, self.file_type)
+            else:
+                raise ValueError(f"Unsupported document type: {self.file_type}")
 
     # -- PDF (pypdfium2 + pdfplumber) ------------------------------------
 

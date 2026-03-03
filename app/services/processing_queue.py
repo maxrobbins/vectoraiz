@@ -101,6 +101,20 @@ def _get_available_memory_gb() -> float:
         return 4.0  # conservative fallback
 
 
+def _friendly_error(exc: Exception) -> str:
+    """Convert an exception to a human-readable error message (no stack traces)."""
+    msg = str(exc)
+    if isinstance(exc, TimeoutError):
+        return "Processing timed out"
+    if isinstance(exc, MemoryError):
+        return "File too large to process in available memory"
+    if isinstance(exc, FileNotFoundError):
+        return "Upload file not found"
+    # Strip multi-line tracebacks, keep first meaningful line
+    first_line = msg.split("\n")[0].strip()
+    return first_line[:300] if first_line else type(exc).__name__
+
+
 @dataclass
 class _QueueItem:
     dataset_id: str
@@ -180,7 +194,11 @@ class ProcessingQueue:
         return None
 
     async def worker_loop(self):
-        """Pull items from the queue and process with bounded concurrency."""
+        """Pull items from the queue and process with bounded concurrency.
+
+        Individual file failures MUST NOT stop the queue — each item is
+        wrapped in its own try/except so the loop always continues.
+        """
         logger.info("Processing queue worker started (max_concurrent=%d)", self._concurrency)
         while True:
             item = await self._queue.get()
@@ -199,8 +217,11 @@ class ProcessingQueue:
                         )
                         await self._run_process(item.dataset_id, item.skip_indexing)
                     logger.info("Completed dataset %s", item.dataset_id)
-                except Exception:
+                except Exception as exc:
                     logger.exception("Failed dataset %s", item.dataset_id)
+                    # Belt-and-suspenders: ensure ERROR status is persisted
+                    # even if process_file failed to set it.
+                    await self._ensure_error_status(item.dataset_id, exc)
                 finally:
                     self.clear_progress(item.dataset_id)
                     self._current = None
@@ -210,6 +231,31 @@ class ProcessingQueue:
     # ------------------------------------------------------------------
     # Internal helpers (lazy imports to avoid circular dependencies)
     # ------------------------------------------------------------------
+
+    async def _ensure_error_status(self, dataset_id: str, exc: Exception) -> None:
+        """Ensure a dataset is marked ERROR with a human-readable message.
+
+        Called as a safety net when worker_loop catches an unhandled exception.
+        """
+        try:
+            from app.services.processing_service import get_processing_service
+            from app.models.dataset import DatasetStatus
+
+            svc = get_processing_service()
+            rec = svc.get_dataset(dataset_id)
+            if rec is None:
+                return
+            # Only override if not already in a terminal state
+            status_val = rec.status.value if hasattr(rec.status, "value") else str(rec.status)
+            if status_val in ("error", "ready", "cancelled", "deleted"):
+                return
+            rec.status = DatasetStatus.ERROR
+            rec.error = _friendly_error(exc)
+            storage_fn = rec.upload_path.name if rec.upload_path else f"{dataset_id}"
+            svc._save_record(rec, storage_fn)
+            logger.info("Set ERROR status for %s: %s", dataset_id, rec.error)
+        except Exception:
+            logger.exception("Failed to set ERROR status for %s", dataset_id)
 
     async def _run_process(self, dataset_id: str, skip_indexing: bool):
         """Process a dataset (extract + optionally index)."""

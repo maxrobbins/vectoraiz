@@ -33,20 +33,10 @@ logger = logging.getLogger(__name__)
 MAX_FILES = 10_000
 MAX_TOTAL_BYTES = 500 * 1024 * 1024 * 1024  # 500 GB (effectively unlimited for local app)
 
-SUPPORTED_EXTENSIONS = {
-    # Data formats (pandas/DuckDB pipeline)
-    '.csv', '.json', '.parquet',
-    '.xlsx', '.xls',
-    # Documents (Unstructured)
-    '.pdf', '.docx', '.doc', '.pptx', '.ppt',
-    # Plain text
-    '.txt', '.md', '.html', '.htm',
-    # Native document formats (BQ-VZ-PERF Phase 3)
-    '.rtf', '.odt', '.ods', '.odp', '.epub',
-    '.eml', '.msg', '.mbox',
-    '.xml', '.rss',
-    '.ics', '.vcf',
-}
+from app.services.processing_service import PROCESSABLE_TYPES
+
+# Build dotted extension set from the canonical PROCESSABLE_TYPES
+SUPPORTED_EXTENSIONS = {f'.{t}' for t in PROCESSABLE_TYPES}
 
 # Magic-byte signatures for MIME validation
 _MAGIC_SIGNATURES: Dict[str, List[bytes]] = {
