@@ -151,12 +151,12 @@ class SerialClient:
             "POST",
             f"/api/v1/serials/{serial}/meter",
             json={
-                "install_token": install_token,
                 "category": category,
                 "cost_usd": str(cost_usd),
                 "request_id": request_id,
                 "description": description,
             },
+            headers={"Authorization": f"Bearer {install_token}"},
         )
         if data and status_code in (200, 402):
             return MeterResult(
@@ -202,9 +202,9 @@ class SerialClient:
             "POST",
             f"/api/v1/serials/{serial}/refresh",
             json={
-                "install_token": install_token,
                 "instance_id": instance_id,
             },
+            headers={"Authorization": f"Bearer {install_token}"},
         )
         if status_code == 200 and data:
             return RefreshResult(
