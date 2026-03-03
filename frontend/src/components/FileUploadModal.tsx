@@ -265,6 +265,7 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
   const hasFiles = queue.length > 0;
   const hasPending = queue.some((f) => f.state === "pending");
   const hasDuplicates = queue.some((f) => f.state === "duplicate");
+  const isProcessing = queue.some((f) => f.state === "processing");
   const allDone = hasFiles && queue.every((f) => f.state === "complete" || f.state === "error" || f.state === "rejected");
 
   /** Add files from drop or file picker */
@@ -471,6 +472,10 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
 
   const handleClose = () => {
     if (isUploading || isImporting) return;
+    if (isProcessing) {
+      toast.info("Processing continues in the background. Check the Datasets page for progress.");
+      onSuccess?.();
+    }
     setQueue([]);
     setShowLocalImport(false);
     onOpenChange(false);
@@ -726,7 +731,7 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
           {!allDone && !hasDuplicates && (
             <>
               <Button variant="ghost" onClick={handleClose} disabled={isUploading}>
-                Cancel
+                {isProcessing ? "Close" : "Cancel"}
               </Button>
               <Button
                 onClick={handleUploadAll}

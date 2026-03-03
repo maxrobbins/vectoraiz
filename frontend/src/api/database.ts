@@ -126,12 +126,12 @@ async function dbFetch<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 export const databaseApi = {
   // CRUD
-  list: () => dbFetch<DatabaseConnection[]>("/connections"),
+  list: () => dbFetch<DatabaseConnection[]>("/connections/"),
 
   get: (id: string) => dbFetch<DatabaseConnection>(`/connections/${id}`),
 
   create: (data: ConnectionCreateRequest) =>
-    dbFetch<DatabaseConnection>("/connections", {
+    dbFetch<DatabaseConnection>("/connections/", {
       method: "POST",
       body: JSON.stringify(data),
     }),

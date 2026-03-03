@@ -327,7 +327,7 @@ export class DuplicateFileError extends Error {
 }
 
 export const datasetsApi = {
-  list: () => apiFetch<DatasetListResponse>('/api/datasets'),
+  list: () => apiFetch<DatasetListResponse>('/api/datasets/'),
 
   get: (id: string) => apiFetch<ApiDataset>(`/api/datasets/${id}`),
   
@@ -342,7 +342,7 @@ export const datasetsApi = {
     }
 
     const params = options?.allowDuplicate ? '?allow_duplicate=true' : '';
-    const response = await fetch(`${getApiUrl()}/api/datasets/upload${params}`, {
+    const response = await fetch(`${getApiUrl()}/api/datasets/upload/${params}`, {
       method: 'POST',
       headers,
       body: formData,
@@ -374,7 +374,7 @@ export const datasetsApi = {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       const params = options?.allowDuplicate ? '?allow_duplicate=true' : '';
-      xhr.open('POST', `${getApiUrl()}/api/datasets/upload${params}`);
+      xhr.open('POST', `${getApiUrl()}/api/datasets/upload/${params}`);
 
       const apiKey = getStoredApiKey();
       if (apiKey) {
@@ -455,7 +455,7 @@ export const datasetsApi = {
       headers['X-API-Key'] = apiKey;
     }
 
-    const response = await fetch(`${getApiUrl()}/api/datasets/batch`, {
+    const response = await fetch(`${getApiUrl()}/api/datasets/batch/`, {
       method: 'POST',
       headers,
       body: formData,
@@ -485,23 +485,23 @@ export const searchApi = {
     if (options?.limit) params.append('limit', options.limit.toString());
     if (options?.min_score) params.append('min_score', options.min_score.toString());
     
-    return apiFetch<SearchResponse>(`/api/search?${params}`);
+    return apiFetch<SearchResponse>(`/api/search/?${params}`);
   },
   
   searchDataset: (datasetId: string, query: string, limit = 10) =>
     apiFetch<SearchResponse>(`/api/search/dataset/${datasetId}?q=${encodeURIComponent(query)}&limit=${limit}`),
   
   suggest: (query: string) =>
-    apiFetch<SearchSuggestResponse>(`/api/search/suggest?q=${encodeURIComponent(query)}`),
+    apiFetch<SearchSuggestResponse>(`/api/search/suggest/?q=${encodeURIComponent(query)}`),
   
   stats: () =>
-    apiFetch<SearchStatsResponse>('/api/search/stats'),
+    apiFetch<SearchStatsResponse>('/api/search/stats/'),
 };
 
 // SQL API
 export const sqlApi = {
   query: (sql: string, options?: { dataset_id?: string; limit?: number; offset?: number }) =>
-    apiFetch<SQLResponse>('/api/sql/query', {
+    apiFetch<SQLResponse>('/api/sql/query/', {
       method: 'POST',
       body: JSON.stringify({
         query: sql,
@@ -512,13 +512,13 @@ export const sqlApi = {
     }),
   
   tables: () =>
-    apiFetch<SQLTablesResponse>('/api/sql/tables'),
+    apiFetch<SQLTablesResponse>('/api/sql/tables/'),
   
   tableSchema: (datasetId: string) =>
     apiFetch<TableSchemaResponse>(`/api/sql/tables/${datasetId}`),
   
   validate: (sql: string) =>
-    apiFetch<{ query: string; valid: boolean; error?: string }>('/api/sql/validate', {
+    apiFetch<{ query: string; valid: boolean; error?: string }>('/api/sql/validate/', {
       method: 'POST',
       body: JSON.stringify({ query: sql }),
     }),
@@ -533,7 +533,7 @@ export const piiApi = {
     apiFetch<PIIScanResponse>(`/api/pii/scan/${datasetId}`),
   
   entities: () =>
-    apiFetch<PIIEntitiesResponse>('/api/pii/entities'),
+    apiFetch<PIIEntitiesResponse>('/api/pii/entities/'),
 };
 
 // System info types
@@ -550,19 +550,19 @@ export interface SystemInfo {
 
 // System API
 export const systemApi = {
-  info: () => apiFetch<SystemInfo>('/api/system/info'),
+  info: () => apiFetch<SystemInfo>('/api/system/info/'),
 };
 
 // Health API
 export const healthApi = {
-  check: () => apiFetch<HealthResponse>('/api/health'),
-  ready: () => apiFetch<ReadyResponse>('/api/health/ready'),
+  check: () => apiFetch<HealthResponse>('/api/health/'),
+  ready: () => apiFetch<ReadyResponse>('/api/health/ready/'),
 };
 
 // Vectors API
 export const vectorsApi = {
-  health: () => apiFetch<VectorHealthResponse>('/api/vectors/health'),
-  collections: () => apiFetch<VectorCollectionsResponse>('/api/vectors/collections'),
+  health: () => apiFetch<VectorHealthResponse>('/api/vectors/health/'),
+  collections: () => apiFetch<VectorCollectionsResponse>('/api/vectors/collections/'),
 };
 
 // Auth types
@@ -610,23 +610,23 @@ export interface AuthKeyCreatedResponse {
 // Auth API
 export const authApi = {
   setup: (username: string, password: string) =>
-    apiFetch<AuthSetupResponse>('/api/auth/setup', {
+    apiFetch<AuthSetupResponse>('/api/auth/setup/', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
 
   login: (username: string, password: string) =>
-    apiFetch<AuthLoginResponse>('/api/auth/login', {
+    apiFetch<AuthLoginResponse>('/api/auth/login/', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
 
-  me: () => apiFetch<AuthMeResponse>('/api/auth/me'),
+  me: () => apiFetch<AuthMeResponse>('/api/auth/me/'),
 
-  listKeys: () => apiFetch<AuthKeyInfo[]>('/api/auth/keys'),
+  listKeys: () => apiFetch<AuthKeyInfo[]>('/api/auth/keys/'),
 
   createKey: (label: string, scopes: string[] = ['all']) =>
-    apiFetch<AuthKeyCreatedResponse>('/api/auth/keys', {
+    apiFetch<AuthKeyCreatedResponse>('/api/auth/keys/', {
       method: 'POST',
       body: JSON.stringify({ label, scopes }),
     }),
@@ -697,17 +697,17 @@ export interface ImportStatusResponse {
 export const importApi = {
   browse: (path: string, limit = 500, offset = 0) =>
     apiFetch<ImportBrowseResponse>(
-      `/api/datasets/import/browse?path=${encodeURIComponent(path)}&limit=${limit}&offset=${offset}`
+      `/api/datasets/import/browse/?path=${encodeURIComponent(path)}&limit=${limit}&offset=${offset}`
     ),
 
   scan: (path: string, recursive = true, maxDepth = 5) =>
-    apiFetch<ImportScanResponse>('/api/datasets/import/scan', {
+    apiFetch<ImportScanResponse>('/api/datasets/import/scan/', {
       method: 'POST',
       body: JSON.stringify({ path, recursive, max_depth: maxDepth }),
     }),
 
   start: (path: string, files: string[]) =>
-    apiFetch<ImportStartResponse>('/api/datasets/import/start', {
+    apiFetch<ImportStartResponse>('/api/datasets/import/start/', {
       method: 'POST',
       body: JSON.stringify({ path, files }),
     }),
