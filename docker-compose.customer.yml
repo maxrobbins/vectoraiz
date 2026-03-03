@@ -18,7 +18,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.customer
-    image: ghcr.io/aidotmarket/vectoraiz:${VECTORAIZ_VERSION:-v1.20.14}
+    image: ghcr.io/aidotmarket/vectoraiz:${VECTORAIZ_VERSION:-v1.20.15}
     ports:
       - "${VECTORAIZ_PORT:-8080}:80"
     volumes:
