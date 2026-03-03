@@ -319,6 +319,7 @@ step5_create_release() {
   gh release create "v$VERSION" \
     --title "v$VERSION" \
     --generate-notes \
+    --latest \
     || die "Failed to create GitHub Release for v$VERSION." \
            "Run manually: gh release create v\$VERSION --title v\$VERSION --generate-notes"
 
