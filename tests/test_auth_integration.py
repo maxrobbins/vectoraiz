@@ -41,6 +41,14 @@ def auth_client(monkeypatch):
 
     api_key_cache.clear()
 
+    # Tests use aim_ keys which require connected mode
+    from app.config import settings
+    monkeypatch.setattr(settings, "mode", "connected")
+
+    # Reset shared httpx client so mock is used
+    import app.auth.api_key_auth as _auth_mod
+    _auth_mod._http_client = None
+
     test_auth_router = APIRouter()
     @test_auth_router.get("/protected-auth-test")
     async def protected_endpoint(user: AuthenticatedUser = Depends(get_current_user)):
@@ -104,7 +112,7 @@ def test_missing_api_key_header(auth_client: TestClient, mock_httpx_client):
     response = auth_client.get("/api/v1/protected-auth-test")
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "X-API-Key header is missing."
+    assert response.json()["detail"] == "Not authenticated. Provide X-API-Key header or vz_session cookie."
     mock_httpx_client.post.assert_not_called()
 
 

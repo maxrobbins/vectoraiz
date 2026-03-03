@@ -1,19 +1,22 @@
 """
-BQ-127: Local Auth Router — Setup, Login, Key Management
-=========================================================
+BQ-127 + BQ-VZ-MULTI-USER: Auth Router
+========================================
 
-Provides local authentication endpoints for standalone mode:
-    POST /api/auth/setup   — First-run admin creation (C10)
-    POST /api/auth/login   — Username/password → API key
+Provides local authentication endpoints:
+    GET  /api/auth/setup   — Check if first-run setup is available
+    POST /api/auth/setup   — First-run admin creation (creates in both tables + sets JWT cookie)
+    POST /api/auth/login   — Username/password → API key + JWT cookie
+    POST /api/auth/logout  — Clears JWT cookie
+    GET  /api/auth/me      — Current user info
     POST /api/auth/keys    — Create new API key for authenticated user
     GET  /api/auth/keys    — List user's API keys (masked)
     DELETE /api/auth/keys/{key_id} — Revoke a key
-    GET  /api/auth/me      — Current user info
+    GET  /api/auth/users   — List all users (admin only)
+    POST /api/auth/users   — Create user (admin only)
+    DELETE /api/auth/users/{user_id} — Deactivate user (admin only)
+    POST /api/auth/users/{user_id}/reset-password — Reset password (admin only)
 
-In connected mode, the legacy signup/onboarding endpoints are also available.
-
-Phase: BQ-127 — Air-Gap Architecture
-Created: S130 (2026-02-13)
+Phase: BQ-127 + BQ-VZ-MULTI-USER
 """
 
 import json
@@ -24,7 +27,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -89,7 +92,7 @@ def _check_login_rate_limit(client_ip: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# BQ-127 Helpers (bcrypt for local_users backward compat)
 # ---------------------------------------------------------------------------
 
 def _prepare_password(password: str) -> bytes:
@@ -169,12 +172,28 @@ def _create_api_key_for_user(
     }
 
 
+def _set_jwt_cookie(response: Response, user_id: str, role: str) -> None:
+    """Set the vz_session JWT cookie on the response."""
+    from app.middleware.auth import create_jwt_token, JWT_COOKIE_NAME, JWT_EXPIRY_HOURS
+
+    token = create_jwt_token(user_id, role)
+    response.set_cookie(
+        key=JWT_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=False,  # LAN HTTP is fine
+        max_age=JWT_EXPIRY_HOURS * 3600,
+        path="/",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
 
 class SetupRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=255, description="Admin username")
+    username: str = Field(..., min_length=3, max_length=64, description="Admin username")
     password: str = Field(..., min_length=8, max_length=255, description="Admin password (min 8 chars)")
 
 
@@ -193,8 +212,9 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     user_id: str
     username: str
-    api_key: str = Field(..., description="Full API key — shown ONCE")
-    message: str = "Login successful. Save your API key."
+    role: str
+    api_key: Optional[str] = Field(default=None, description="Full API key — shown ONCE (BQ-127 compat)")
+    message: str = "Login successful."
 
 
 class CreateKeyRequest(BaseModel):
@@ -222,9 +242,22 @@ class KeyInfo(BaseModel):
 class UserInfo(BaseModel):
     user_id: str
     username: str
+    display_name: Optional[str] = None
     role: str
     is_active: bool
     created_at: str
+    last_login_at: Optional[str] = None
+
+
+class CreateUserRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64, description="Username")
+    password: str = Field(..., min_length=8, max_length=255, description="Password (min 8 chars)")
+    role: str = Field(default="user", description="Role: 'admin' or 'user'")
+    display_name: Optional[str] = Field(default=None, max_length=128, description="Display name")
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=8, max_length=255, description="New password (min 8 chars)")
 
 
 # ---------------------------------------------------------------------------
@@ -234,22 +267,31 @@ class UserInfo(BaseModel):
 @router.get(
     "/setup",
     summary="Check setup availability",
-    description="Returns whether first-run setup is available (no admin exists yet).",
+    description="Returns whether first-run setup is available (no users exist yet).",
 )
 async def check_setup():
-    """Returns {available: true/false} so the frontend can decide whether to show the setup form."""
+    """Returns {needs_setup: bool} so the frontend can decide whether to show the setup form."""
+    from app.services.auth_service import get_auth_service
+
+    auth_svc = get_auth_service()
+    needs = await auth_svc.needs_setup()
+
+    # Also check BQ-127 local_users for backward compat
     from app.core.database import get_session_context
     from app.models.local_auth import LocalUser
     from sqlmodel import select, func
 
     with get_session_context() as session:
-        count = session.exec(select(func.count()).select_from(LocalUser)).one()
+        local_count = session.exec(select(func.count()).select_from(LocalUser)).one()
 
-    return {"available": count == 0}
+    return {
+        "needs_setup": needs and local_count == 0,
+        "available": needs and local_count == 0,  # BQ-127 compat
+    }
 
 
 # ---------------------------------------------------------------------------
-# POST /api/auth/setup — First-run admin creation (C10)
+# POST /api/auth/setup — First-run admin creation
 # ---------------------------------------------------------------------------
 
 @router.post(
@@ -258,51 +300,76 @@ async def check_setup():
     status_code=status.HTTP_201_CREATED,
     summary="First-run setup — create admin account",
     description=(
-        "Creates the first admin user. Only available when local_users table is empty. "
-        "Transaction-safe check. Rate-limited 3/min per IP. (BQ-127 C10)"
+        "Creates the first admin user. Only available when no users exist. "
+        "Creates user in both users table (JWT auth) and local_users table (API key auth). "
+        "Sets JWT cookie and returns API key for backward compatibility."
     ),
 )
-async def setup(body: SetupRequest, request: Request):
-    """BQ-127 (C10): First-run setup endpoint.
-
-    Only works when local_users table is empty. Uses a transaction-safe
-    check — SELECT COUNT + INSERT in the same transaction to prevent races.
-    """
+async def setup(body: SetupRequest, request: Request, response: Response):
+    """First-run setup: create admin in both auth systems, set JWT cookie, return API key."""
     _check_rate_limit(request.client.host if request.client else "unknown")
 
+    from app.services.auth_service import get_auth_service
+
+    auth_svc = get_auth_service()
+
+    # Check if setup is still available (users table)
+    if not await auth_svc.needs_setup():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Setup is no longer available.",
+        )
+
+    # Also check BQ-127 local_users
     from app.core.database import get_session_context
     from app.models.local_auth import LocalUser
     from sqlmodel import select, func
 
     with get_session_context() as session:
-        # Transaction-safe check: count users inside the transaction
-        count = session.exec(select(func.count()).select_from(LocalUser)).one()
-        if count > 0:
+        local_count = session.exec(select(func.count()).select_from(LocalUser)).one()
+        if local_count > 0:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Setup is no longer available.",
             )
 
-        # Create admin user
-        user = LocalUser(
-            id=str(uuid4()),
-            username=body.username.strip(),
+    # Create user in users table (Argon2id — BQ-VZ-MULTI-USER)
+    try:
+        user = await auth_svc.create_user(
+            username=body.username,
+            password=body.password,
+            role="admin",
+            display_name=body.username.strip(),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
+
+    # Create user in local_users table (bcrypt — BQ-127 backward compat)
+    with get_session_context() as session:
+        local_user = LocalUser(
+            id=user.id,  # Same UUID for cross-table mapping
+            username=body.username.strip().lower(),
             password_hash=_hash_password(body.password),
             role="admin",
             is_active=True,
         )
-        session.add(user)
+        session.add(local_user)
         session.commit()
-        session.refresh(user)
 
-    # Generate initial API key
+    # Generate API key (BQ-127 backward compat)
     key_info = _create_api_key_for_user(
         user_id=user.id,
         label="Admin (setup)",
         scopes=["read", "write", "admin"],
     )
 
-    logger.info("First-run setup complete: user=%s", user.username)
+    # Set JWT cookie (BQ-VZ-MULTI-USER)
+    _set_jwt_cookie(response, user.id, user.role)
+
+    logger.info("First-run setup complete: user=%s (dual auth)", user.username)
 
     return SetupResponse(
         user_id=user.id,
@@ -312,50 +379,151 @@ async def setup(body: SetupRequest, request: Request):
 
 
 # ---------------------------------------------------------------------------
-# POST /api/auth/login — Username/password → API key
+# POST /api/auth/login — Username/password → JWT cookie + API key
 # ---------------------------------------------------------------------------
 
 @router.post(
     "/login",
     response_model=LoginResponse,
     summary="Login with username/password",
-    description="Validates credentials and returns a new API key.",
+    description="Validates credentials, sets JWT cookie, and optionally returns API key.",
 )
-async def login(body: LoginRequest, request: Request):
-    """BQ-127: Login endpoint — validates credentials, creates and returns a new API key."""
+async def login(body: LoginRequest, request: Request, response: Response):
+    """Authenticate against users table (Argon2id) first, fall back to local_users (bcrypt)."""
     _check_login_rate_limit(request.client.host if request.client else "unknown")
 
+    from app.services.auth_service import get_auth_service
+
+    auth_svc = get_auth_service()
+
+    # Try users table first (Argon2id — BQ-VZ-MULTI-USER)
+    user = await auth_svc.authenticate(body.username, body.password)
+    if user:
+        # Set JWT cookie
+        _set_jwt_cookie(response, user.id, user.role)
+
+        # Also generate API key for backward compat with existing frontend
+        key_info = _create_api_key_for_user(
+            user_id=user.id,
+            label=f"Login ({datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')})",
+            scopes=["read", "write", "admin"] if user.role == "admin" else ["read", "write"],
+        )
+
+        return LoginResponse(
+            user_id=user.id,
+            username=user.username,
+            role=user.role,
+            api_key=key_info["full_key"],
+        )
+
+    # Fall back to local_users table (bcrypt — BQ-127)
     from app.core.database import get_session_context
     from app.models.local_auth import LocalUser
     from sqlmodel import select
 
     with get_session_context() as session:
         stmt = select(LocalUser).where(LocalUser.username == body.username.strip())
-        user = session.exec(stmt).first()
+        local_user = session.exec(stmt).first()
 
-    if not user or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password.",
+    if local_user and local_user.is_active and _verify_password(body.password, local_user.password_hash):
+        # Set JWT cookie using local_user info
+        _set_jwt_cookie(response, local_user.id, local_user.role)
+
+        # Generate API key
+        key_info = _create_api_key_for_user(
+            user_id=local_user.id,
+            label=f"Login ({datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')})",
+            scopes=["read", "write", "admin"],
         )
 
-    if not _verify_password(body.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password.",
+        return LoginResponse(
+            user_id=local_user.id,
+            username=local_user.username,
+            role=local_user.role,
+            api_key=key_info["full_key"],
         )
 
-    # Generate a new API key for this login
-    key_info = _create_api_key_for_user(
-        user_id=user.id,
-        label=f"Login ({datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')})",
-        scopes=["read", "write", "admin"],
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid username or password.",
     )
 
-    return LoginResponse(
-        user_id=user.id,
-        username=user.username,
-        api_key=key_info["full_key"],
+
+# ---------------------------------------------------------------------------
+# POST /api/auth/logout — Clear JWT cookie
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/logout",
+    summary="Logout",
+    description="Clears the JWT session cookie.",
+)
+async def logout(response: Response):
+    """Clear the vz_session cookie."""
+    from app.middleware.auth import JWT_COOKIE_NAME
+
+    response.delete_cookie(
+        key=JWT_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=False,
+    )
+    return {"detail": "Logged out."}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/auth/me — Current user info
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/me",
+    response_model=UserInfo,
+    summary="Current user info",
+    description="Returns information about the currently authenticated user.",
+)
+async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
+    """Return current user info — checks users table first, then local_users."""
+    # Try users table first (BQ-VZ-MULTI-USER)
+    from app.core.database import get_session_context
+    from app.models.user import User
+
+    with get_session_context() as session:
+        mu_user = session.get(User, user.user_id)
+
+    if mu_user:
+        return UserInfo(
+            user_id=mu_user.id,
+            username=mu_user.username,
+            display_name=mu_user.display_name,
+            role=mu_user.role,
+            is_active=mu_user.is_active,
+            created_at=mu_user.created_at.isoformat() if mu_user.created_at else "",
+            last_login_at=mu_user.last_login_at.isoformat() if mu_user.last_login_at else None,
+        )
+
+    # Fall back to local_users (BQ-127)
+    from app.models.local_auth import LocalUser
+
+    with get_session_context() as session:
+        local_user = session.get(LocalUser, user.user_id)
+
+    if local_user:
+        return UserInfo(
+            user_id=local_user.id,
+            username=local_user.username,
+            role=local_user.role,
+            is_active=local_user.is_active,
+            created_at=local_user.created_at.isoformat() if local_user.created_at else "",
+        )
+
+    # Fallback for ai.market users in connected mode
+    return UserInfo(
+        user_id=user.user_id,
+        username=user.user_id,
+        role="user",
+        is_active=True,
+        created_at="",
     )
 
 
@@ -475,37 +643,204 @@ async def revoke_key(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/auth/me — Current user info
+# BQ-VZ-MULTI-USER: User management endpoints (admin only)
 # ---------------------------------------------------------------------------
 
 @router.get(
-    "/me",
-    response_model=UserInfo,
-    summary="Current user info",
-    description="Returns information about the currently authenticated user.",
+    "/users",
+    response_model=List[UserInfo],
+    summary="List all users (admin only)",
+    description="Returns all users from the multi-user auth system.",
 )
-async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
-    """BQ-127: Return current user info from local auth store."""
+async def list_users(user: AuthenticatedUser = Depends(get_current_user)):
+    """List all users. Requires admin role."""
+    from app.middleware.auth import require_admin
+    # Manual role check since we can't easily use Depends inside Depends
+    _role = getattr(getattr(user, '_request', None), 'state', None)
+    # Check via request state or JWT claims
+    from app.services.auth_service import get_auth_service
+    auth_svc = get_auth_service()
+
+    # Verify caller is admin
+    caller = await auth_svc.get_user_by_id(user.user_id)
+    if caller and caller.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+
+    users = await auth_svc.list_users()
+    return [
+        UserInfo(
+            user_id=u.id,
+            username=u.username,
+            display_name=u.display_name,
+            role=u.role,
+            is_active=u.is_active,
+            created_at=u.created_at.isoformat() if u.created_at else "",
+            last_login_at=u.last_login_at.isoformat() if u.last_login_at else None,
+        )
+        for u in users
+    ]
+
+
+@router.post(
+    "/users",
+    response_model=UserInfo,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new user (admin only)",
+    description="Creates a new user account. Requires admin role.",
+)
+async def create_user(
+    body: CreateUserRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Create a new user. Requires admin role."""
+    from app.services.auth_service import get_auth_service
+
+    auth_svc = get_auth_service()
+
+    # Verify caller is admin
+    caller = await auth_svc.get_user_by_id(user.user_id)
+    if caller and caller.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+
+    if body.role not in ("admin", "user"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be 'admin' or 'user'.",
+        )
+
+    try:
+        new_user = await auth_svc.create_user(
+            username=body.username,
+            password=body.password,
+            role=body.role,
+            display_name=body.display_name,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
+
+    # Also create in local_users for API key backward compat
     from app.core.database import get_session_context
     from app.models.local_auth import LocalUser
 
     with get_session_context() as session:
-        local_user = session.get(LocalUser, user.user_id)
-
-    if not local_user:
-        # Fallback for ai.market users in connected mode
-        return UserInfo(
-            user_id=user.user_id,
-            username=user.user_id,
-            role="user",
+        local_user = LocalUser(
+            id=new_user.id,
+            username=new_user.username,
+            password_hash=_hash_password(body.password),
+            role=body.role,
             is_active=True,
-            created_at="",
         )
+        session.add(local_user)
+        session.commit()
 
     return UserInfo(
-        user_id=local_user.id,
-        username=local_user.username,
-        role=local_user.role,
-        is_active=local_user.is_active,
-        created_at=local_user.created_at.isoformat() if local_user.created_at else "",
+        user_id=new_user.id,
+        username=new_user.username,
+        display_name=new_user.display_name,
+        role=new_user.role,
+        is_active=new_user.is_active,
+        created_at=new_user.created_at.isoformat() if new_user.created_at else "",
     )
+
+
+@router.delete(
+    "/users/{user_id}",
+    summary="Deactivate a user (admin only)",
+    description="Deactivates a user account. The user can no longer log in.",
+)
+async def deactivate_user(
+    user_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Deactivate a user. Requires admin role."""
+    from app.services.auth_service import get_auth_service
+
+    auth_svc = get_auth_service()
+
+    # Verify caller is admin
+    caller = await auth_svc.get_user_by_id(user.user_id)
+    if caller and caller.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+
+    # Prevent self-deactivation
+    if user_id == user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot deactivate your own account.",
+        )
+
+    success = await auth_svc.deactivate_user(user_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+
+    # Also deactivate in local_users if exists
+    from app.core.database import get_session_context
+    from app.models.local_auth import LocalUser
+
+    with get_session_context() as session:
+        local_user = session.get(LocalUser, user_id)
+        if local_user:
+            local_user.is_active = False
+            session.add(local_user)
+            session.commit()
+
+    return {"detail": "User deactivated."}
+
+
+@router.post(
+    "/users/{user_id}/reset-password",
+    summary="Reset user password (admin only)",
+    description="Resets a user's password. Requires admin role.",
+)
+async def admin_reset_password(
+    user_id: str,
+    body: ResetPasswordRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Reset a user's password. Requires admin role."""
+    from app.services.auth_service import get_auth_service
+
+    auth_svc = get_auth_service()
+
+    # Verify caller is admin
+    caller = await auth_svc.get_user_by_id(user.user_id)
+    if caller and caller.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+
+    success = await auth_svc.reset_password(user_id, body.new_password)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+
+    # Also update in local_users if exists
+    from app.core.database import get_session_context
+    from app.models.local_auth import LocalUser
+
+    with get_session_context() as session:
+        local_user = session.get(LocalUser, user_id)
+        if local_user:
+            local_user.password_hash = _hash_password(body.new_password)
+            session.add(local_user)
+            session.commit()
+
+    return {"detail": "Password reset successfully."}

@@ -53,6 +53,10 @@ pyyaml>=6.0
 # Local Auth (BQ-127: Air-Gap Architecture)
 bcrypt>=4.0.0
 
+# Multi-User Auth (BQ-VZ-MULTI-USER: Admin/User Role Split)
+argon2-cffi>=23.1.0
+PyJWT>=2.8.0
+
 # MCP Server (BQ-MCP-RAG: Universal LLM Connectivity)
 mcp>=1.8.0,<1.9
 

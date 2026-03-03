@@ -259,9 +259,12 @@ async def _validate_key_against_aimarket(api_key: str) -> Optional[Authenticated
 # ---------------------------------------------------------------------------
 
 async def get_current_user(request: Request) -> AuthenticatedUser:
-    """BQ-127: Authenticate requests via X-API-Key header.
+    """BQ-127 + BQ-VZ-MULTI-USER: Authenticate requests via JWT cookie or X-API-Key.
 
-    Dispatches by mode:
+    Auth priority:
+        1. vz_session httpOnly cookie (JWT) — BQ-VZ-MULTI-USER
+        2. X-API-Key header — BQ-127 (standalone/connected)
+    Dispatches by mode for X-API-Key:
         standalone: validate against local key store only
         connected:  vz_ prefix → local; aim_ prefix → ai.market
     """
@@ -275,13 +278,36 @@ async def get_current_user(request: Request) -> AuthenticatedUser:
             free_trial_remaining_cents=0,
         )
         request.state.user = mock_user
+        request.state.user_role = "admin"
         return mock_user
+
+    # BQ-VZ-MULTI-USER: Try JWT cookie first
+    from app.middleware.auth import JWT_COOKIE_NAME, decode_jwt_token
+    token = request.cookies.get(JWT_COOKIE_NAME)
+    if token:
+        claims = decode_jwt_token(token)
+        if claims:
+            user_id = claims.get("sub")
+            user_role = claims.get("role", "user")
+            from app.services.auth_service import get_auth_service
+            auth_svc = get_auth_service()
+            user_obj = await auth_svc.get_user_by_id(user_id)
+            if user_obj and user_obj.is_active:
+                jwt_user = AuthenticatedUser(
+                    user_id=user_obj.id,
+                    key_id="jwt_session",
+                    scopes=["read", "write", "admin"] if user_role == "admin" else ["read", "write"],
+                    valid=True,
+                )
+                request.state.user = jwt_user
+                request.state.user_role = user_role
+                return jwt_user
 
     api_key = request.headers.get("X-API-Key")
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="X-API-Key header is missing.",
+            detail="Not authenticated. Provide X-API-Key header or vz_session cookie.",
         )
 
     # Check cache first
@@ -316,6 +342,7 @@ async def get_current_user(request: Request) -> AuthenticatedUser:
     # Store in cache and request state
     api_key_cache[api_key] = validated_user
     request.state.user = validated_user
+    request.state.user_role = "admin"  # BQ-VZ-MULTI-USER: API key users default to admin
     return validated_user
 
 

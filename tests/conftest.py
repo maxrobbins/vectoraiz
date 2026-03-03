@@ -30,6 +30,7 @@ from app.models.dataset import DatasetRecord  # noqa: F401
 from app.models.billing import BillingUsage, BillingSubscription  # noqa: F401
 from app.models.api_key import APIKey  # noqa: F401
 from app.models.local_auth import LocalUser, LocalAPIKey  # noqa: F401  BQ-127
+from app.models.user import User  # noqa: F401  BQ-VZ-MULTI-USER
 from app.models.connectivity import ConnectivityTokenRecord  # noqa: F401  BQ-MCP-RAG
 from app.models.state import Session, Message, UserPreferences  # noqa: F401  BQ-128
 from app.models.fulfillment import FulfillmentLog  # noqa: F401  BQ-D1

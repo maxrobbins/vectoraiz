@@ -516,14 +516,25 @@ def create_app() -> FastAPI:
             content={"detail": "Internal Server Error"},
         )
 
-    # Protected Routes Dependency
-    protected_route_dependency = [Depends(get_current_user)]
+    # ------------------------------------------------------------------
+    # BQ-VZ-MULTI-USER: Role-based route dependencies
+    # ------------------------------------------------------------------
+    from app.middleware.auth import require_admin, require_any
+
+    # Backward compat: protected_route_dependency now uses require_any
+    # so both admin and user roles can access (endpoints that need admin-only
+    # use admin_route_dependency instead)
+    any_user_dependency = [Depends(require_any)]
+    admin_route_dependency = [Depends(require_admin)]
+
+    # Legacy alias — still works for existing code that references it
+    protected_route_dependency = any_user_dependency
 
     # ------------------------------------------------------------------
     # BQ-127: Register routers — stock (always) vs connected (conditional)
     # ------------------------------------------------------------------
 
-    # ALWAYS mount — stock features (work in both standalone and connected)
+    # PUBLIC — no auth required
     app.include_router(health.router, prefix="/api", tags=["health"])
     app.include_router(diagnostics.router, prefix="/api", tags=["diagnostics"])
     app.include_router(docs.router, prefix="/api/docs", tags=["documentation"])
@@ -538,69 +549,71 @@ def create_app() -> FastAPI:
         tags=["search"],
     )
 
-    # Protected stock routers
+    # ADMIN + USER — datasets (GET = any, POST/PUT/DELETE = admin enforced per-endpoint)
     app.include_router(
         datasets.router,
         prefix="/api/datasets",
         tags=["datasets"],
-        dependencies=protected_route_dependency,
+        dependencies=any_user_dependency,
     )
-    # BQ-VZ-LOCAL-IMPORT: Local directory import (browse, scan, import)
+
+    # ADMIN ONLY — upload/import/processing-related
     app.include_router(
         imports.router,
         prefix="/api/datasets/import",
         tags=["import"],
-        dependencies=protected_route_dependency,
+        dependencies=admin_route_dependency,
     )
 
+    # ADMIN ONLY — vectors, sql, pii
     app.include_router(
         vectors.router,
         prefix="/api/vectors",
         tags=["vectors"],
-        dependencies=protected_route_dependency,
+        dependencies=admin_route_dependency,
     )
     app.include_router(
         sql.router,
         prefix="/api/sql",
         tags=["sql"],
-        dependencies=protected_route_dependency,
+        dependencies=admin_route_dependency,
     )
     app.include_router(
         pii.router,
         prefix="/api/pii",
         tags=["pii"],
-        dependencies=protected_route_dependency,
+        dependencies=admin_route_dependency,
     )
 
-    # VZ-PERF-P1: Local directory import from host-mounted /data/import
+    # ADMIN ONLY — local directory import
     from app.routers.local_import import router as local_import_router
     app.include_router(
         local_import_router,
         prefix="/api/v1/import",
         tags=["import"],
-        dependencies=protected_route_dependency,
+        dependencies=admin_route_dependency,
     )
 
-    # BQ-VZ-DB-CONNECT: Database connectivity (always mounted, auth-protected)
+    # ADMIN ONLY — database connectivity
     from app.routers.database import router as database_router
     app.include_router(
         database_router,
         prefix="/api/v1/db",
         tags=["database"],
-        dependencies=protected_route_dependency,
+        dependencies=admin_route_dependency,
     )
 
-    # BQ-128: Co-Pilot routers (REST + WebSocket) — always mounted
+    # ADMIN + USER — Co-Pilot (REST + WebSocket)
     from app.routers.copilot import router as copilot_rest_router, ws_router as copilot_ws_router
     app.include_router(
         copilot_rest_router,
         prefix="/api/copilot",
         tags=["copilot"],
-        dependencies=protected_route_dependency,
+        dependencies=any_user_dependency,
     )
-    app.include_router(copilot_ws_router)  # WebSocket at /ws/copilot (no prefix)
+    app.include_router(copilot_ws_router)  # WebSocket at /ws/copilot (no prefix, own auth)
 
-    # allAI features: mount when enabled (works in both standalone and connected)
+    # ADMIN + USER — allAI features
     if settings.allai_enabled:
         from app.routers import allai
 
@@ -608,10 +621,11 @@ def create_app() -> FastAPI:
             allai.router,
             prefix="/api/allai",
             tags=["allai"],
+            dependencies=any_user_dependency,
         )
         logger.info("allAI router mounted (allai_enabled=True)")
 
-    # BQ-127 (C5): Billing/marketplace — connected mode only (requires ai.market + Stripe)
+    # CONNECTED MODE — billing/marketplace
     if settings.mode == "connected":
         from app.routers import billing, integrations, webhooks
 
@@ -624,19 +638,19 @@ def create_app() -> FastAPI:
             billing.router,
             prefix="/api",
             tags=["billing", "api-keys"],
-            dependencies=protected_route_dependency,
+            dependencies=admin_route_dependency,
         )
         app.include_router(
             integrations.router,
             prefix="/api/integrations",
             tags=["integrations"],
-            dependencies=protected_route_dependency,
+            dependencies=admin_route_dependency,
         )
         logger.info("Connected mode: premium routers mounted (billing, integrations, webhooks)")
     elif not settings.allai_enabled:
         logger.info("Standalone mode: premium routers NOT mounted")
 
-    # Website chat — public endpoint for vectoraiz.com chat widget (no auth)
+    # PUBLIC — website chat widget (no auth)
     from app.routers.website_chat import router as website_chat_router
     app.include_router(
         website_chat_router,
@@ -644,25 +658,25 @@ def create_app() -> FastAPI:
         tags=["website-chat"],
     )
 
-    # BQ-MCP-RAG Phase 3: Connectivity management endpoints (always mounted for Settings UI)
+    # ADMIN ONLY — connectivity management (Settings UI)
     from app.routers.connectivity_mgmt import router as connectivity_mgmt_router
     app.include_router(
         connectivity_mgmt_router,
         prefix="/api/connectivity",
         tags=["Connectivity Management"],
-        dependencies=protected_route_dependency,
+        dependencies=admin_route_dependency,
     )
 
-    # Feedback endpoint (admin, auth required)
+    # ADMIN ONLY — feedback
     from app.routers.feedback import router as feedback_router
     app.include_router(
         feedback_router,
         prefix="/api",
         tags=["feedback"],
-        dependencies=protected_route_dependency,
+        dependencies=admin_route_dependency,
     )
 
-    # BQ-VZ-AUTO-UPDATE: Version check + auto-update endpoints
+    # PUBLIC — version check
     from app.routers.version import router as version_router
     app.include_router(
         version_router,
@@ -670,22 +684,22 @@ def create_app() -> FastAPI:
         tags=["version"],
     )
 
-    # BQ-TUNNEL: Public URL tunnel management (always mounted, auth-protected)
+    # ADMIN ONLY — tunnel management
     from app.routers.tunnel import router as tunnel_router
     app.include_router(
         tunnel_router,
         prefix="/api/tunnel",
         tags=["tunnel"],
-        dependencies=protected_route_dependency,
+        dependencies=admin_route_dependency,
     )
 
-    # BQ-VZ-RAW-LISTINGS: Raw file listings for marketplace (always mounted, auth-protected)
+    # ADMIN ONLY — raw file listings for marketplace
     from app.routers.raw_listings import router as raw_listings_router
     app.include_router(
         raw_listings_router,
         prefix="/api/raw",
         tags=["raw-listings"],
-        dependencies=protected_route_dependency,
+        dependencies=admin_route_dependency,
     )
 
     # BQ-MCP-RAG: External LLM Connectivity — conditionally mount
