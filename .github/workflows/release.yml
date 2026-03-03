@@ -305,8 +305,9 @@ jobs:
       - name: Run Linux install script end-to-end
         env:
           INSTALL_REF: ${{ github.sha }}
+          VECTORAIZ_MODE: standalone
         run: |
-          echo "n" | bash installers/linux/install-linux.sh
+          bash installers/linux/install-linux.sh
           
           if [ ! -f "$HOME/vectoraiz/docker-compose.customer.yml" ]; then
             echo "::error::Compose file not downloaded"

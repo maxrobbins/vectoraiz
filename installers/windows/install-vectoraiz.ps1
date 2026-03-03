@@ -262,22 +262,34 @@ $Url = Get-Url -Port $Port
 # --- Step 5a: Connected mode prompt ---------------------------------
 $VectoraizMode = "standalone"
 if (-not (Test-Path $envFile)) {
-    Write-Host ""
-    Write-Host "  ┌─────────────────────────────────────────────────────────┐"
-    Write-Host "  │  Would you like to run vectorAIz in Connected mode?    │"
-    Write-Host "  │                                                         │"
-    Write-Host "  │  YES — Enables allAI, your AI data assistant            │"
-    Write-Host "  │  NO  — Standalone mode, no internet access required     │"
-    Write-Host "  └─────────────────────────────────────────────────────────┘"
-    Write-Host ""
-    do {
-        $yn = Read-Host "  Connect to ai.market for AI features? (Y/N)"
-        switch -Regex ($yn) {
-            "^[Yy]" { $VectoraizMode = "connected"; Write-Success "Connected mode selected — allAI will be available"; break }
-            "^[Nn]" { $VectoraizMode = "standalone"; Write-Success "Standalone mode selected"; break }
-            default  { Write-Host "  Please answer Y or N." }
+    $isInteractive = [Environment]::UserInteractive -and (-not $env:CI)
+    if (-not $isInteractive) {
+        # Non-interactive mode (e.g. CI)
+        if ($env:VECTORAIZ_MODE) {
+            $VectoraizMode = $env:VECTORAIZ_MODE
+            Write-Success "Using VECTORAIZ_MODE=$VectoraizMode from environment"
+        } else {
+            $VectoraizMode = "standalone"
+            Write-Info "Non-interactive install detected, defaulting to standalone mode. Set VECTORAIZ_MODE=connected to enable ai.market features."
         }
-    } while ($yn -notmatch "^[YyNn]")
+    } else {
+        Write-Host ""
+        Write-Host "  ┌─────────────────────────────────────────────────────────┐"
+        Write-Host "  │  Would you like to run vectorAIz in Connected mode?    │"
+        Write-Host "  │                                                         │"
+        Write-Host "  │  YES — Enables allAI, your AI data assistant            │"
+        Write-Host "  │  NO  — Standalone mode, no internet access required     │"
+        Write-Host "  └─────────────────────────────────────────────────────────┘"
+        Write-Host ""
+        do {
+            $yn = Read-Host "  Connect to ai.market for AI features? (Y/N)"
+            switch -Regex ($yn) {
+                "^[Yy]" { $VectoraizMode = "connected"; Write-Success "Connected mode selected — allAI will be available"; break }
+                "^[Nn]" { $VectoraizMode = "standalone"; Write-Success "Standalone mode selected"; break }
+                default  { Write-Host "  Please answer Y or N." }
+            }
+        } while ($yn -notmatch "^[YyNn]")
+    }
 }
 
 # ─── Step 6: Generate .env ───────────────────────────────────────

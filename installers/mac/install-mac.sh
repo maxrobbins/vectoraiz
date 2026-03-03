@@ -318,23 +318,33 @@ URL=$(make_url "$PORT")
 # ─── Step 5a: Connected mode prompt ──────────────────────────────
 VECTORAIZ_MODE="standalone"
 if [ ! -f "$INSTALL_DIR/.env" ]; then
-    echo ""
-    echo "  ┌─────────────────────────────────────────────────────────┐"
-    echo "  │  Would you like to run vectorAIz in Connected mode?    │"
-    echo "  │                                                         │"
-    echo "  │  YES — Enables allAI, your AI data assistant            │"
-    echo "  │  NO  — Standalone mode, no internet access required     │"
-    echo "  └─────────────────────────────────────────────────────────┘"
-    echo ""
-    while true; do
-        printf "  Connect to ai.market for AI features? (Y/N): "
-        read -r yn </dev/tty
-        case "$yn" in
-            [Yy]* ) VECTORAIZ_MODE="connected"; success "Connected mode selected — allAI will be available"; break;;
-            [Nn]* ) VECTORAIZ_MODE="standalone"; success "Standalone mode selected"; break;;
-            * ) echo "  Please answer Y or N.";;
-        esac
-    done
+    if [ ! -t 0 ] && [ ! -e /dev/tty ]; then
+        # Non-interactive mode (e.g. CI / piped input without TTY)
+        if [ -n "${VECTORAIZ_MODE:-}" ]; then
+            success "Using VECTORAIZ_MODE=${VECTORAIZ_MODE} from environment"
+        else
+            VECTORAIZ_MODE="standalone"
+            info "Non-interactive install detected, defaulting to standalone mode. Set VECTORAIZ_MODE=connected to enable ai.market features."
+        fi
+    else
+        echo ""
+        echo "  ┌─────────────────────────────────────────────────────────┐"
+        echo "  │  Would you like to run vectorAIz in Connected mode?    │"
+        echo "  │                                                         │"
+        echo "  │  YES — Enables allAI, your AI data assistant            │"
+        echo "  │  NO  — Standalone mode, no internet access required     │"
+        echo "  └─────────────────────────────────────────────────────────┘"
+        echo ""
+        while true; do
+            printf "  Connect to ai.market for AI features? (Y/N): "
+            read -r yn </dev/tty
+            case "$yn" in
+                [Yy]* ) VECTORAIZ_MODE="connected"; success "Connected mode selected — allAI will be available"; break;;
+                [Nn]* ) VECTORAIZ_MODE="standalone"; success "Standalone mode selected"; break;;
+                * ) echo "  Please answer Y or N.";;
+            esac
+        done
+    fi
 fi
 
 # ─── Step 5: Generate .env ───────────────────────────────────────
