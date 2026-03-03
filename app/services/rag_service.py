@@ -8,7 +8,7 @@ Coordinates Search, Prompting, Generation, and Parsing.
 Flow (Stateless):
 1. User Question → SearchService → Relevant chunks from Qdrant
 2. Chunks → PromptRegistry → Grounded prompt with citations
-3. Prompt → LLMService → Generated answer
+3. Prompt → AllieProvider → Generated answer
 4. Answer → CitationParser → Structured response with sources
 
 Flow (Stateful - with session):
@@ -16,7 +16,7 @@ Flow (Stateful - with session):
 2. User Question → SearchService → Relevant chunks
 3. History + Chunks → ContextWindowManager → Fit in budget
 4. Context → PromptRegistry → Grounded prompt
-5. Prompt → LLMService → Generated answer
+5. Prompt → AllieProvider → Generated answer
 6. Persist user message + assistant response to session
 7. Answer → CitationParser → Structured response
 

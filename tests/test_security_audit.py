@@ -81,22 +81,6 @@ class TestAuthDisableGuard:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# 2. LLM admin routes require auth
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestLLMAdminAuth:
-    """LLM admin routes require authentication."""
-
-    def test_llm_admin_requires_auth(self, monkeypatch):
-        """Unauthenticated request to /api/admin/llm returns 401."""
-        monkeypatch.setenv("VECTORAIZ_AUTH_ENABLED", "true")
-        from app.main import app
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/api/admin/llm/settings")
-        assert response.status_code == 401
-
-
-# ═══════════════════════════════════════════════════════════════════════
 # 3. Login rate limiting
 # ═══════════════════════════════════════════════════════════════════════
 

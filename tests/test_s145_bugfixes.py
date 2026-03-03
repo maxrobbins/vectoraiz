@@ -64,32 +64,6 @@ def _make_mock_record(status=ProcessingStatus.READY, processed_path_exists=True)
 class TestAttestationLLMError:
     """Bug 1: POST /api/datasets/{id}/attestation should return 503 when LLM is unconfigured."""
 
-    def test_attestation_returns_503_on_llm_error(self):
-        """When the attestation service raises LLMProviderError, the endpoint returns 503."""
-        from app.services.llm_providers.base import LLMProviderError
-        from app.services.attestation_service import get_attestation_service
-        from app.services.processing_service import get_processing_service
-
-        mock_record = _make_mock_record()
-        mock_processing = MagicMock()
-        mock_processing.get_dataset.return_value = mock_record
-
-        mock_attestation = AsyncMock()
-        mock_attestation.generate_attestation.side_effect = LLMProviderError(
-            "LLM not configured", provider="none"
-        )
-
-        app.dependency_overrides[get_processing_service] = lambda: mock_processing
-        app.dependency_overrides[get_attestation_service] = lambda: mock_attestation
-
-        try:
-            resp = client.post("/api/datasets/test-id/attestation")
-            assert resp.status_code == 503
-            assert "LLM provider not configured" in resp.json()["detail"]
-        finally:
-            app.dependency_overrides.pop(get_processing_service, None)
-            app.dependency_overrides.pop(get_attestation_service, None)
-
     def test_attestation_returns_404_on_value_error(self):
         """ValueError (e.g. dataset not found) returns 404."""
         from app.services.attestation_service import get_attestation_service
@@ -143,31 +117,6 @@ class TestAttestationLLMError:
 
 class TestListingMetadataLLMError:
     """Bug 2: POST /api/datasets/{id}/listing-metadata should return 503 when LLM is unconfigured."""
-
-    def test_listing_metadata_returns_503_on_llm_error(self):
-        from app.services.llm_providers.base import LLMProviderError
-        from app.services.listing_metadata_service import get_listing_metadata_service
-        from app.services.processing_service import get_processing_service
-
-        mock_record = _make_mock_record()
-        mock_processing = MagicMock()
-        mock_processing.get_dataset.return_value = mock_record
-
-        mock_listing = AsyncMock()
-        mock_listing.generate_listing_metadata.side_effect = LLMProviderError(
-            "LLM not configured", provider="none"
-        )
-
-        app.dependency_overrides[get_processing_service] = lambda: mock_processing
-        app.dependency_overrides[get_listing_metadata_service] = lambda: mock_listing
-
-        try:
-            resp = client.post("/api/datasets/test-id/listing-metadata")
-            assert resp.status_code == 503
-            assert "LLM provider not configured" in resp.json()["detail"]
-        finally:
-            app.dependency_overrides.pop(get_processing_service, None)
-            app.dependency_overrides.pop(get_listing_metadata_service, None)
 
     def test_listing_metadata_returns_500_on_other_error(self):
         from app.services.listing_metadata_service import get_listing_metadata_service

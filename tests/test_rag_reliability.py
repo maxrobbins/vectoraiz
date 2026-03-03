@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 
 from app.services.rag_service import RAGService
 from app.services.indexing_service import IndexingService
+from app.services.allie_provider import AllieStreamChunk
 from app.models.rag import SourceChunk, SourceMetadata
 
 
@@ -38,7 +39,7 @@ class TestHistoryBudgetClamping:
         """Build a RAGService with all dependencies mocked for chat tests."""
         svc = RAGService.__new__(RAGService)
         svc.search_service = MagicMock()
-        svc.llm_service = MagicMock()
+        svc._allie = MagicMock()
         svc.prompt_registry = MagicMock()
         svc.citation_parser = MagicMock()
         svc._db = MagicMock()
@@ -79,14 +80,17 @@ class TestHistoryBudgetClamping:
         })
 
         svc.prompt_registry.render.return_value = "prompt"
-        svc.llm_service.generate = AsyncMock(return_value="answer [1]")
+
+        async def fake_allie_stream(**kw):
+            yield AllieStreamChunk(text="answer [1]")
+
+        svc._allie.stream = fake_allie_stream
         svc.citation_parser.parse.return_value = MagicMock(
             citations=[], unique_sources_cited=[],
             retrieval_time_ms=None, generation_time_ms=None,
             total_time_ms=None, template_used=None, model_used=None,
             chunks_retrieved=0, session_id=None, message_id=None,
         )
-        svc.llm_service.get_model_info.return_value = {"model": "test"}
 
         # max_context_tokens=1000 but retrieval alone is ~5000 tokens
         with patch("app.services.rag_service.run_sync", side_effect=_fake_run_sync):
@@ -122,9 +126,9 @@ class TestHistoryBudgetClamping:
         svc.prompt_registry.render.return_value = "prompt"
 
         async def fake_stream(**kw):
-            yield "chunk"
+            yield AllieStreamChunk(text="chunk")
 
-        svc.llm_service.generate_stream = fake_stream
+        svc._allie.stream = fake_stream
 
         with patch("app.services.rag_service.run_sync", side_effect=_fake_run_sync):
             chunks = []
@@ -151,7 +155,7 @@ class TestChatStreamPersistence:
     def _make_stream_service(self):
         svc = RAGService.__new__(RAGService)
         svc.search_service = MagicMock()
-        svc.llm_service = MagicMock()
+        svc._allie = MagicMock()
         svc.prompt_registry = MagicMock()
         svc.citation_parser = MagicMock()
         svc._db = MagicMock()
@@ -185,11 +189,11 @@ class TestChatStreamPersistence:
         svc = self._make_stream_service()
 
         async def fake_stream(**kw):
-            yield "Hello "
-            yield "World "
-            yield "More"
+            yield AllieStreamChunk(text="Hello ")
+            yield AllieStreamChunk(text="World ")
+            yield AllieStreamChunk(text="More")
 
-        svc.llm_service.generate_stream = fake_stream
+        svc._allie.stream = fake_stream
 
         with patch("app.services.rag_service.run_sync", side_effect=_fake_run_sync):
             collected = []
@@ -222,10 +226,10 @@ class TestChatStreamPersistence:
         svc = self._make_stream_service()
 
         async def fake_stream(**kw):
-            yield "Full "
-            yield "response."
+            yield AllieStreamChunk(text="Full ")
+            yield AllieStreamChunk(text="response.")
 
-        svc.llm_service.generate_stream = fake_stream
+        svc._allie.stream = fake_stream
 
         with patch("app.services.rag_service.run_sync", side_effect=_fake_run_sync):
             chunks = []
@@ -251,7 +255,7 @@ class TestChatStreamPersistence:
             return
             yield  # make it a generator
 
-        svc.llm_service.generate_stream = fake_stream
+        svc._allie.stream = fake_stream
 
         with patch("app.services.rag_service.run_sync", side_effect=_fake_run_sync):
             chunks = []
@@ -418,7 +422,7 @@ class TestQueryStreamCitations:
         """The last yielded chunk should be a JSON citations event."""
         svc = RAGService.__new__(RAGService)
         svc.search_service = MagicMock()
-        svc.llm_service = MagicMock()
+        svc._allie = MagicMock()
         svc.prompt_registry = MagicMock()
         svc.citation_parser = MagicMock()
 
@@ -431,10 +435,10 @@ class TestQueryStreamCitations:
         svc.prompt_registry.render.return_value = "prompt"
 
         async def fake_stream(**kw):
-            yield "Cats are great "
-            yield "[1]."
+            yield AllieStreamChunk(text="Cats are great ")
+            yield AllieStreamChunk(text="[1].")
 
-        svc.llm_service.generate_stream = fake_stream
+        svc._allie.stream = fake_stream
 
         from app.models.rag import ParsedRAGResponse, Citation
         parsed = ParsedRAGResponse(
@@ -477,7 +481,7 @@ class TestQueryStreamCitations:
         """When no results found, should yield message without citations event."""
         svc = RAGService.__new__(RAGService)
         svc.search_service = MagicMock()
-        svc.llm_service = MagicMock()
+        svc._allie = MagicMock()
         svc.prompt_registry = MagicMock()
         svc.citation_parser = MagicMock()
 
