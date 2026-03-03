@@ -108,7 +108,6 @@ class CoPilotContextManager:
         connected_mode = not is_local_only()
         vectorization_enabled = _check_vectorization_enabled()
         qdrant_status = _check_qdrant_status()
-        byo_llm_configured = _check_byo_llm_configured()
         local_only = is_local_only()
 
         # Dataset list: prefer frontend-provided summary, fallback to DB
@@ -153,7 +152,6 @@ class CoPilotContextManager:
             connected_mode=connected_mode,
             vectorization_enabled=vectorization_enabled,
             qdrant_status=qdrant_status,
-            byo_llm_configured=byo_llm_configured,
             capabilities=capabilities,
             recent_events=[],  # Populated in Phase 3 (proactive triggers)
             triggers={},  # Populated in Phase 3
@@ -265,10 +263,6 @@ def _check_qdrant_status() -> str:
     """Check Qdrant status. Placeholder — real health check in Phase 3."""
     return os.environ.get("VECTORAIZ_QDRANT_STATUS", "healthy")
 
-
-def _check_byo_llm_configured() -> bool:
-    """Check if BYO LLM is configured (separate from Allie)."""
-    return bool(os.environ.get("VECTORAIZ_BYO_LLM_KEY"))
 
 
 # Module-level singleton

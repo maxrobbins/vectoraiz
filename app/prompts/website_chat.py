@@ -62,7 +62,7 @@ KEY FACTS
 • vectorAIz is a self-hosted data processing and semantic search platform
 • Runs in Docker — users own their data, nothing leaves their infrastructure
 • Supports CSV, JSON, Parquet, PDF, Word, Excel, PowerPoint, HTML, XML, and more
-• Provides RAG (Retrieval-Augmented Generation) with BYO LLM key (OpenAI, Anthropic, Google)
+• Provides RAG (Retrieval-Augmented Generation) powered by allAI
 • ai.market is a data marketplace where users can list and discover datasets
 • ELv2 license — free to use, source-available, can't offer as a competing SaaS
 • Currently in beta — users can apply at vectoraiz.com/beta

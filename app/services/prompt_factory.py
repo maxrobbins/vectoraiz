@@ -74,8 +74,6 @@ class AllieContext:
     connected_mode: bool = True
     vectorization_enabled: bool = False
     qdrant_status: str = "unknown"
-    byo_llm_configured: bool = False
-
     # Capabilities
     capabilities: Dict[str, bool] = field(default_factory=dict)
 
@@ -185,7 +183,7 @@ You are **allAI** (pronounced "Ally"), the AI data assistant inside **vectorAIz*
 - vectorAIz features, configuration, troubleshooting
 - Data upload, processing, vectorization, querying
 - Data formats, cleaning, encoding, transformation
-- LLM configuration (BYO key setup, provider selection)
+- LLM configuration and provider selection
 - ai.market integration (publishing listings, marketplace sync)
 - Privacy and security questions about the platform
 - DuckDB / Qdrant configuration and optimization
@@ -394,7 +392,6 @@ If the user reports a problem, has a suggestion, or asks for help — use the su
 - Connected mode: {context.connected_mode}
 - Vectorization enabled: {context.vectorization_enabled}
 - Qdrant status: {context.qdrant_status}
-- BYO LLM configured: {context.byo_llm_configured}
 - Local only: {context.local_only}""")
 
         if context.remaining_tokens_today is not None:
