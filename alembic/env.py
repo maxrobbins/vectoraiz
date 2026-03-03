@@ -20,6 +20,8 @@ from app.models.billing import BillingUsage, BillingSubscription  # noqa: F401
 from app.models.api_key import APIKey  # noqa: F401
 from app.models.local_auth import LocalUser, LocalAPIKey  # noqa: F401  BQ-127
 from app.models.connectivity import ConnectivityTokenRecord  # noqa: F401  BQ-MCP-RAG
+from app.models.raw_file import RawFile  # noqa: F401  BQ-VZ-RAW-LISTINGS
+from app.models.raw_listing import RawListing  # noqa: F401  BQ-VZ-RAW-LISTINGS
 from app.services.deduction_queue import deductions_metadata
 
 config = context.config

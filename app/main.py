@@ -679,6 +679,15 @@ def create_app() -> FastAPI:
         dependencies=protected_route_dependency,
     )
 
+    # BQ-VZ-RAW-LISTINGS: Raw file listings for marketplace (always mounted, auth-protected)
+    from app.routers.raw_listings import router as raw_listings_router
+    app.include_router(
+        raw_listings_router,
+        prefix="/api/raw",
+        tags=["raw-listings"],
+        dependencies=protected_route_dependency,
+    )
+
     # BQ-MCP-RAG: External LLM Connectivity — conditionally mount
     if settings.connectivity_enabled:
         from app.routers.ext import router as ext_router
