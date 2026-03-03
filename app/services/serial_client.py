@@ -122,11 +122,11 @@ class SerialClient:
             "POST",
             f"/api/v1/serials/{serial}/activate",
             json={
-                "bootstrap_token": bootstrap_token,
                 "instance_id": instance_id,
                 "hostname": hostname,
-                "app_version": version,
+                "version": version,
             },
+            headers={"Authorization": f"Bearer {bootstrap_token}"},
         )
         if status_code == 200 and data:
             return ActivateResult(
