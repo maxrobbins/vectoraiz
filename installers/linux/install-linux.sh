@@ -324,6 +324,29 @@ fi
 success "Using port $PORT"
 URL=$(make_url "$PORT")
 
+
+# ─── Step 6a: Connected mode prompt ──────────────────────────────
+VECTORAIZ_MODE="standalone"
+if [ ! -f "$INSTALL_DIR/.env" ]; then
+    echo ""
+    echo "  ┌─────────────────────────────────────────────────────────┐"
+    echo "  │  Would you like to run vectorAIz in Connected mode?    │"
+    echo "  │                                                         │"
+    echo "  │  YES — Enables allAI, your AI data assistant            │"
+    echo "  │  NO  — Standalone mode, no internet access required     │"
+    echo "  └─────────────────────────────────────────────────────────┘"
+    echo ""
+    while true; do
+        printf "  Connect to ai.market for AI features? (Y/N): "
+        read -r yn </dev/tty
+        case "$yn" in
+            [Yy]* ) VECTORAIZ_MODE="connected"; success "Connected mode selected — allAI will be available"; break;;
+            [Nn]* ) VECTORAIZ_MODE="standalone"; success "Standalone mode selected"; break;;
+            * ) echo "  Please answer Y or N.";;
+        esac
+    done
+fi
+
 # ─── Step 7: Generate .env ───────────────────────────────────────
 if [ ! -f "$INSTALL_DIR/.env" ]; then
     info "Generating secure configuration..."
@@ -342,8 +365,8 @@ VECTORAIZ_APIKEY_HMAC_SECRET=$(generate_secret)
 # Port to serve on
 VECTORAIZ_PORT=${PORT}
 
-# Mode: standalone (default) or connected (with Allie AI)
-VECTORAIZ_MODE=standalone
+# Mode: standalone or connected (with allAI)
+VECTORAIZ_MODE=${VECTORAIZ_MODE}
 EOF
     success "Generated .env with secure defaults"
 else

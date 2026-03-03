@@ -258,6 +258,28 @@ if (-not $Port) { $Port = 8080 }
 Write-Success "Using port $Port"
 $Url = Get-Url -Port $Port
 
+
+# --- Step 5a: Connected mode prompt ---------------------------------
+$VectoraizMode = "standalone"
+if (-not (Test-Path $envFile)) {
+    Write-Host ""
+    Write-Host "  ┌─────────────────────────────────────────────────────────┐"
+    Write-Host "  │  Would you like to run vectorAIz in Connected mode?    │"
+    Write-Host "  │                                                         │"
+    Write-Host "  │  YES — Enables allAI, your AI data assistant            │"
+    Write-Host "  │  NO  — Standalone mode, no internet access required     │"
+    Write-Host "  └─────────────────────────────────────────────────────────┘"
+    Write-Host ""
+    do {
+        $yn = Read-Host "  Connect to ai.market for AI features? (Y/N)"
+        switch -Regex ($yn) {
+            "^[Yy]" { $VectoraizMode = "connected"; Write-Success "Connected mode selected — allAI will be available"; break }
+            "^[Nn]" { $VectoraizMode = "standalone"; Write-Success "Standalone mode selected"; break }
+            default  { Write-Host "  Please answer Y or N." }
+        }
+    } while ($yn -notmatch "^[YyNn]")
+}
+
 # ─── Step 6: Generate .env ───────────────────────────────────────
 if (-not (Test-Path $envFile)) {
     Write-Info "Generating secure configuration..."
@@ -276,8 +298,8 @@ VECTORAIZ_APIKEY_HMAC_SECRET=$(Get-RandomSecret)
 # Port to serve on
 VECTORAIZ_PORT=$Port
 
-# Mode: standalone (default) or connected (with Allie AI)
-VECTORAIZ_MODE=standalone
+# Mode: standalone or connected (with allAI)
+VECTORAIZ_MODE=$VectoraizMode
 "@
     Set-Content -Path $envFile -Value $envContent -Encoding UTF8
     Write-Success "Generated .env with secure defaults"
