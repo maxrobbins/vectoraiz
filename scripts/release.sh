@@ -304,10 +304,42 @@ step4_wait_for_image() {
 }
 
 # =============================================================================
-# STEP 5: Post-release smoke test
+# STEP 5: Create GitHub Release
 # =============================================================================
-step5_smoke_test() {
-  header "Step 5: Post-release smoke test"
+step5_create_release() {
+  header "Step 5: Create GitHub Release"
+
+  info "Creating GitHub Release for v$VERSION..."
+
+  if gh release view "v$VERSION" &>/dev/null; then
+    pass "GitHub Release v$VERSION already exists"
+    return 0
+  fi
+
+  gh release create "v$VERSION" \
+    --title "v$VERSION" \
+    --generate-notes \
+    || die "Failed to create GitHub Release for v$VERSION." \
+           "Run manually: gh release create v\$VERSION --title v\$VERSION --generate-notes"
+
+  pass "GitHub Release v$VERSION created"
+
+  # VERIFY: install script will now resolve to this version
+  info "Verifying /releases/latest resolves to v$VERSION..."
+  local latest
+  latest=$(curl -fsSL "https://api.github.com/repos/aidotmarket/vectoraiz/releases/latest" 2>/dev/null | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+  if [ "$latest" = "v$VERSION" ]; then
+    pass "GitHub /releases/latest resolves to v$VERSION"
+  else
+    warn "/releases/latest shows '$latest' instead of v$VERSION - may take a moment to propagate"
+  fi
+}
+
+# =============================================================================
+# STEP 6: Post-release smoke test
+# =============================================================================
+step6_smoke_test() {
+  header "Step 6: Post-release smoke test"
 
   # 5a: Install script compose file resolves to new version
   info "Checking install script compose URL..."
@@ -366,7 +398,8 @@ main() {
   step2_commit_push
   step3_tag
   step4_wait_for_image
-  step5_smoke_test
+  step5_create_release
+  step6_smoke_test
   print_summary
 }
 
