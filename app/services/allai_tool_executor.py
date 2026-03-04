@@ -257,6 +257,9 @@ class AllAIToolExecutor:
             "get_tunnel_status": self._handle_get_tunnel_status,
             # BQ-VZ-DIAG: Diagnostic bundle
             "generate_diagnostic_bundle": self._handle_generate_diagnostic_bundle,
+            # BQ-VZ-NOTIFICATIONS: Notification tools
+            "get_notifications": self._handle_get_notifications,
+            "create_notification": self._handle_create_notification,
         }
 
         handler = handlers.get(tool_name)
@@ -1223,6 +1226,68 @@ class AllAIToolExecutor:
                 "Contains: health, config, system, qdrant, db, errors, logs. "
                 "Tell the user they can download it from the Settings → Diagnostics page."
             ),
+        )
+
+    # ------------------------------------------------------------------
+    # BQ-VZ-NOTIFICATIONS: Notification tools
+    # ------------------------------------------------------------------
+
+    async def _handle_get_notifications(self, tool_input: dict) -> ToolResult:
+        """List recent notifications."""
+        from app.services.notification_service import get_notification_service
+
+        svc = get_notification_service()
+        unread_only = tool_input.get("unread_only", False)
+        notifications = svc.list(limit=20, unread_only=unread_only)
+        unread_count = svc.get_unread_count()
+
+        items = []
+        for n in notifications:
+            items.append({
+                "id": n.id,
+                "type": n.type,
+                "title": n.title,
+                "message": n.message,
+                "read": n.read,
+                "category": n.category,
+                "created_at": n.created_at.isoformat(),
+            })
+
+        if not items:
+            summary = "No notifications found." if not unread_only else "No unread notifications."
+        else:
+            lines = [f"- [{n['type'].upper()}] {n['title']}: {n['message']}" for n in items[:10]]
+            summary = f"{unread_count} unread, {len(items)} total shown.\n" + "\n".join(lines)
+
+        return ToolResult(
+            frontend_data={"notifications": items, "unread_count": unread_count},
+            llm_summary=summary,
+        )
+
+    async def _handle_create_notification(self, tool_input: dict) -> ToolResult:
+        """Create a notification for the user."""
+        from app.services.notification_service import get_notification_service
+
+        title = tool_input.get("title", "")
+        message = tool_input.get("message", "")
+        if not title or not message:
+            return ToolResult(
+                frontend_data={"error": "title and message are required"},
+                llm_summary="Error: title and message are required.",
+            )
+
+        svc = get_notification_service()
+        n = svc.create(
+            type=tool_input.get("type", "info"),
+            category=tool_input.get("category", "system"),
+            title=title,
+            message=message,
+            source="allai",
+        )
+
+        return ToolResult(
+            frontend_data={"success": True, "notification_id": n.id},
+            llm_summary=f"Notification created: [{n.type}] {n.title}",
         )
 
     @staticmethod

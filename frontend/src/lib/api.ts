@@ -565,6 +565,54 @@ export const vectorsApi = {
   collections: () => apiFetch<VectorCollectionsResponse>('/api/vectors/collections'),
 };
 
+// Notification types
+export interface ApiNotification {
+  id: string;
+  type: 'info' | 'success' | 'warning' | 'error' | 'action_required';
+  category: 'upload' | 'processing' | 'system' | 'diagnostic';
+  title: string;
+  message: string;
+  metadata_json: string | null;
+  read: boolean;
+  batch_id: string | null;
+  source: string;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  notifications: ApiNotification[];
+  count: number;
+}
+
+export interface UnreadCountResponse {
+  count: number;
+}
+
+// Notifications API
+export const notificationsApi = {
+  list: (params?: { limit?: number; offset?: number; category?: string; unread_only?: boolean }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.append('limit', params.limit.toString());
+    if (params?.offset) searchParams.append('offset', params.offset.toString());
+    if (params?.category) searchParams.append('category', params.category);
+    if (params?.unread_only) searchParams.append('unread_only', 'true');
+    const qs = searchParams.toString();
+    return apiFetch<NotificationListResponse>(`/api/notifications${qs ? `?${qs}` : ''}`);
+  },
+
+  unreadCount: () =>
+    apiFetch<UnreadCountResponse>('/api/notifications/unread-count'),
+
+  markRead: (id: string) =>
+    apiFetch<ApiNotification>(`/api/notifications/${id}/read`, { method: 'PATCH' }),
+
+  markAllRead: () =>
+    apiFetch<{ marked: number }>('/api/notifications/read-all', { method: 'POST' }),
+
+  delete: (id: string) =>
+    apiFetch<{ message: string }>(`/api/notifications/${id}`, { method: 'DELETE' }),
+};
+
 // Auth types
 export interface AuthUser {
   id: string;

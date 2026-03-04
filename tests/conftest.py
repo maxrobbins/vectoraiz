@@ -37,6 +37,7 @@ from app.models.fulfillment import FulfillmentLog  # noqa: F401  BQ-D1
 from app.models.database_connection import DatabaseConnection  # noqa: F401  BQ-VZ-DB-CONNECT
 from app.models.raw_file import RawFile  # noqa: F401  BQ-VZ-RAW-LISTINGS
 from app.models.raw_listing import RawListing  # noqa: F401  BQ-VZ-RAW-LISTINGS
+from app.models.notification import Notification  # noqa: F401  BQ-VZ-NOTIFICATIONS
 
 SQLModel.metadata.create_all(get_engine())
 

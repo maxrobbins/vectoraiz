@@ -415,6 +415,58 @@ ALLAI_TOOLS = [
         },
     },
     # ------------------------------------------------------------------
+    # BQ-VZ-NOTIFICATIONS: Notification access
+    # ------------------------------------------------------------------
+    {
+        "name": "get_notifications",
+        "description": (
+            "List recent notifications. Use when the user asks about alerts, "
+            "issues, or 'what happened'. Shows system events, upload results, "
+            "and diagnostic messages."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "unread_only": {
+                    "type": "boolean",
+                    "description": "Only show unread notifications (default false)",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "create_notification",
+        "description": (
+            "Create a notification for the user (e.g. to flag an issue allAI detected). "
+            "Use when allAI needs to proactively alert the user about something."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Short notification title",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "Detailed notification message",
+                },
+                "type": {
+                    "type": "string",
+                    "enum": ["info", "warning", "error"],
+                    "description": "Notification severity (default info)",
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["system", "diagnostic"],
+                    "description": "Notification category (default system)",
+                },
+            },
+            "required": ["title", "message"],
+        },
+    },
+    # ------------------------------------------------------------------
     # BQ-VZ-DIAG: Diagnostic bundle generation
     # ------------------------------------------------------------------
     {

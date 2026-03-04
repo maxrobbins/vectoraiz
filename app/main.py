@@ -694,6 +694,15 @@ def create_app() -> FastAPI:
         dependencies=admin_route_dependency,
     )
 
+    # ADMIN + USER — notifications
+    from app.routers.notifications import router as notifications_router
+    app.include_router(
+        notifications_router,
+        prefix="/api/notifications",
+        tags=["notifications"],
+        dependencies=any_user_dependency,
+    )
+
     # ADMIN ONLY — raw file listings for marketplace
     from app.routers.raw_listings import router as raw_listings_router
     app.include_router(

@@ -1,5 +1,6 @@
 import { useLocation } from "react-router-dom";
 import { User, Search, Command, Wifi, WifiOff, Loader2, LogOut, Settings } from "lucide-react";
+import NotificationBell from "@/components/notifications/NotificationBell";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -57,6 +58,9 @@ const TopBar = ({ onOpenCommandPalette }: TopBarProps) => {
             <Command className="h-3 w-3" />K
           </kbd>
         </Button>
+
+        {/* Notifications */}
+        <NotificationBell />
 
         {/* Connection Status */}
         <Tooltip>
