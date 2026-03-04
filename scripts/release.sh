@@ -5,10 +5,13 @@
 # Single source of truth: git tags. Image built by GitHub Actions on tag push.
 #
 # Usage:
-#   ./scripts/release.sh 1.17.0        # Release specific version
-#   ./scripts/release.sh patch          # Auto-bump patch (1.16.0 → 1.16.1)
-#   ./scripts/release.sh minor          # Auto-bump minor (1.16.0 → 1.17.0)
-#   ./scripts/release.sh major          # Auto-bump major (1.16.0 → 2.0.0)
+#   ./scripts/release.sh patch          # Direct stable release (1.20.26 → 1.20.27)
+#   ./scripts/release.sh minor          # Direct stable release (1.20.26 → 1.21.0)
+#   ./scripts/release.sh major          # Direct stable release (1.20.26 → 2.0.0)
+#   ./scripts/release.sh 1.21.0         # Direct stable release (explicit version)
+#   ./scripts/release.sh rc             # Release candidate (→ v1.20.27-rc.1, -rc.2, …)
+#   ./scripts/release.sh promote        # Promote latest RC to stable
+#   ./scripts/release.sh promote v1.20.27-rc.3  # Promote specific RC
 #
 # See docs/RELEASING.md for full documentation and recovery procedures.
 # =============================================================================
@@ -378,33 +381,228 @@ step6_smoke_test() {
 # SUMMARY
 # =============================================================================
 print_summary() {
+  local install_url="${1:-curl -fsSL ${GITHUB_RAW}/install.sh | bash}"
+  local label="${2:-RELEASE COMPLETE}"
+
   echo ""
   echo -e "${GREEN}${BOLD}╔═══════════════════════════════════════════════════════════════╗${RESET}"
-  echo -e "${GREEN}${BOLD}║                    RELEASE COMPLETE                           ║${RESET}"
+  printf "${GREEN}${BOLD}║${RESET}  %-60s${GREEN}${BOLD}║${RESET}\n" "$label"
   echo -e "${GREEN}${BOLD}╠═══════════════════════════════════════════════════════════════╣${RESET}"
-  echo -e "${GREEN}${BOLD}║${RESET}  Version:  ${BOLD}v${VERSION}${RESET}$(printf '%*s' $((46 - ${#VERSION})) '')${GREEN}${BOLD}║${RESET}"
-  echo -e "${GREEN}${BOLD}║${RESET}  Image:    ${BOLD}${IMAGE}:v${VERSION}${RESET}$(printf '%*s' $((18 - ${#VERSION})) '')${GREEN}${BOLD}║${RESET}"
-  echo -e "${GREEN}${BOLD}║${RESET}  Tag:      ${BOLD}v${VERSION}${RESET}$(printf '%*s' $((46 - ${#VERSION})) '')${GREEN}${BOLD}║${RESET}"
+  printf "${GREEN}${BOLD}║${RESET}  Version:  ${BOLD}%-49s${RESET}${GREEN}${BOLD}║${RESET}\n" "v${VERSION}"
+  printf "${GREEN}${BOLD}║${RESET}  Image:    ${BOLD}%-49s${RESET}${GREEN}${BOLD}║${RESET}\n" "${IMAGE}:v${VERSION}"
+  printf "${GREEN}${BOLD}║${RESET}  Tag:      ${BOLD}%-49s${RESET}${GREEN}${BOLD}║${RESET}\n" "v${VERSION}"
   echo -e "${GREEN}${BOLD}╠═══════════════════════════════════════════════════════════════╣${RESET}"
-  echo -e "${GREEN}${BOLD}║${RESET}  Install:                                                    ${GREEN}${BOLD}║${RESET}"
-  echo -e "${GREEN}${BOLD}║${RESET}  curl -fsSL ${GITHUB_RAW}/install.sh | bash  ${GREEN}${BOLD}║${RESET}"
+  printf "${GREEN}${BOLD}║${RESET}  Install:  %-49s${GREEN}${BOLD}║${RESET}\n" ""
+  printf "${GREEN}${BOLD}║${RESET}  %-60s${GREEN}${BOLD}║${RESET}\n" "$install_url"
   echo -e "${GREEN}${BOLD}╚═══════════════════════════════════════════════════════════════╝${RESET}"
   echo ""
 }
 
 # =============================================================================
-# MAIN
+# HELPER: Get current stable version (latest tag matching vX.Y.Z without -rc)
 # =============================================================================
-main() {
-  preflight
-  resolve_version "${1:-}"
+get_current_stable() {
+  local tag
+  tag=$(git tag -l 'v*' --sort=-v:refname | { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | head -1)
+  echo "${tag#v}"
+}
+
+# =============================================================================
+# FLOW: Stable release (patch/minor/major/explicit — existing behavior)
+# =============================================================================
+stable_flow() {
+  resolve_version "${1:?Usage: release.sh <version|patch|minor|major>}"
   step1_update_compose
   step2_commit_push
   step3_tag
   step4_wait_for_image
   step5_create_release
   step6_smoke_test
-  print_summary
+  print_summary "curl -fsSL https://get.vectoraiz.com | bash" "STABLE RELEASE COMPLETE"
+}
+
+# =============================================================================
+# FLOW: Release Candidate
+# =============================================================================
+rc_flow() {
+  header "RC version resolution"
+
+  local current
+  current=$(get_current_stable)
+  if [ -z "$current" ]; then current="0.0.0"; fi
+
+  local major minor patch
+  IFS='.' read -r major minor patch <<< "$current"
+  local next_version="$major.$minor.$((patch + 1))"
+
+  # Find highest existing RC for this version
+  local highest_rc=0
+  local rc_tag
+  while IFS= read -r rc_tag; do
+    [ -z "$rc_tag" ] && continue
+    local rc_num="${rc_tag##*-rc.}"
+    if [ "$rc_num" -gt "$highest_rc" ] 2>/dev/null; then
+      highest_rc="$rc_num"
+    fi
+  done < <(git tag -l "v${next_version}-rc.*")
+
+  local rc_number=$((highest_rc + 1))
+  VERSION="${next_version}-rc.${rc_number}"
+
+  # Check tag doesn't already exist (safety)
+  if git rev-parse "v$VERSION" &>/dev/null; then
+    die "Tag v$VERSION already exists." \
+        "This shouldn't happen. Delete it with: git tag -d v$VERSION && git push origin :refs/tags/v$VERSION"
+  fi
+
+  pass "Current stable: v${current}"
+  pass "Next version:   ${next_version}"
+  pass "RC number:      ${rc_number}"
+  pass "RC tag:         v${VERSION}"
+
+  echo ""
+  echo -e "${BOLD}╔═══════════════════════════════════════════════════╗${RESET}"
+  echo -e "${BOLD}║  Release Candidate: v${VERSION}$(printf '%*s' $((28 - ${#VERSION})) '')║${RESET}"
+  echo -e "${BOLD}╚═══════════════════════════════════════════════════╝${RESET}"
+
+  # Tag from HEAD of main — no compose update, no commit
+  step3_tag
+  step4_wait_for_image
+
+  # Create GitHub Release with --prerelease
+  header "Create GitHub Pre-release"
+  if gh release view "v$VERSION" &>/dev/null; then
+    pass "GitHub Release v$VERSION already exists"
+  else
+    gh release create "v$VERSION" \
+      --prerelease \
+      --title "v$VERSION" \
+      --generate-notes \
+      || die "Failed to create GitHub pre-release for v$VERSION." \
+             "Run manually: gh release create v$VERSION --prerelease --title v$VERSION --generate-notes"
+    pass "GitHub pre-release v$VERSION created"
+  fi
+
+  print_summary "curl -fsSL https://get.vectoraiz.com/rc | bash" "RC RELEASE COMPLETE"
+}
+
+# =============================================================================
+# FLOW: Promote RC to stable
+# =============================================================================
+promote_flow() {
+  local rc_tag="${1:-}"
+
+  header "Promote RC to stable"
+
+  if [ -z "$rc_tag" ]; then
+    # Find latest RC tag automatically
+    rc_tag=$(git tag -l 'v*-rc.*' --sort=-v:refname | head -1)
+    if [ -z "$rc_tag" ]; then
+      die "No RC tags found." \
+          "Create one first with: ./scripts/release.sh rc"
+    fi
+    info "Auto-detected latest RC: $rc_tag"
+  fi
+
+  # Validate format
+  if ! echo "$rc_tag" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'; then
+    die "Invalid RC tag format: '$rc_tag'" \
+        "Expected format: v1.20.27-rc.1"
+  fi
+
+  # Extract stable version from RC tag (e.g., v1.20.27-rc.3 → 1.20.27)
+  VERSION="${rc_tag#v}"
+  VERSION="${VERSION%-rc.*}"
+
+  pass "RC tag:          $rc_tag"
+  pass "Stable version:  v$VERSION"
+
+  # Check stable tag doesn't already exist
+  if git rev-parse "v$VERSION" &>/dev/null; then
+    die "Stable tag v$VERSION already exists." \
+        "This RC may have already been promoted."
+  fi
+
+  # Validate RC Docker image exists on GHCR
+  info "Verifying RC image exists on GHCR..."
+  if ! "$DOCKER" manifest inspect "$IMAGE:$rc_tag" &>/dev/null; then
+    die "RC image $IMAGE:$rc_tag not found on GHCR." \
+        "Wait for the RC build to complete, or rebuild with: ./scripts/release.sh rc"
+  fi
+  pass "RC image $IMAGE:$rc_tag exists on GHCR"
+
+  # Get the commit SHA that the RC tag points to
+  local rc_sha
+  rc_sha=$(git rev-list -n 1 "$rc_tag" 2>/dev/null) || \
+    die "Cannot resolve commit for $rc_tag" "Fetch tags: git fetch --tags"
+  pass "RC commit: ${rc_sha:0:12}"
+
+  echo ""
+  echo -e "${BOLD}╔═══════════════════════════════════════════════════╗${RESET}"
+  echo -e "${BOLD}║  Promoting $rc_tag → v${VERSION}$(printf '%*s' $((25 - ${#rc_tag} - ${#VERSION})) '')║${RESET}"
+  echo -e "${BOLD}╚═══════════════════════════════════════════════════╝${RESET}"
+
+  # Update compose file, commit, push
+  step1_update_compose
+  step2_commit_push
+
+  # Create stable tag from the SAME commit the RC pointed to
+  header "Create stable tag from RC commit"
+  git tag -a "v$VERSION" "$rc_sha" -m "Release $VERSION (promoted from $rc_tag)"
+  pass "Created tag v$VERSION from $rc_sha"
+  git push origin "v$VERSION"
+  pass "Pushed tag v$VERSION to origin"
+
+  step4_wait_for_image
+
+  # Create stable GitHub Release (--latest, NOT prerelease)
+  header "Create stable GitHub Release"
+  if gh release view "v$VERSION" &>/dev/null; then
+    pass "GitHub Release v$VERSION already exists"
+    gh release edit "v$VERSION" --latest 2>/dev/null || true
+  else
+    gh release create "v$VERSION" \
+      --title "v$VERSION" \
+      --generate-notes \
+      --latest \
+      || die "Failed to create GitHub Release for v$VERSION." \
+             "Run manually: gh release create v$VERSION --title v$VERSION --generate-notes --latest"
+    pass "GitHub Release v$VERSION created"
+  fi
+
+  step6_smoke_test
+  print_summary "curl -fsSL https://get.vectoraiz.com | bash" "STABLE RELEASE COMPLETE (promoted from $rc_tag)"
+}
+
+# =============================================================================
+# MAIN
+# =============================================================================
+main() {
+  local cmd="${1:-}"
+
+  case "$cmd" in
+    rc)
+      preflight
+      rc_flow
+      ;;
+    promote)
+      preflight
+      promote_flow "${2:-}"
+      ;;
+    patch|minor|major)
+      preflight
+      stable_flow "$cmd"
+      ;;
+    "")
+      die "Usage: release.sh <rc|promote|patch|minor|major|X.Y.Z>" \
+          "See docs/RELEASING.md for details."
+      ;;
+    *)
+      # Explicit version number
+      preflight
+      stable_flow "$cmd"
+      ;;
+  esac
 }
 
 main "$@"
