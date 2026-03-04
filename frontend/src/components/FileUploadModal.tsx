@@ -352,6 +352,9 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
     ));
   }, []);
 
+  /** Current batch ID — set when uploads start */
+  const batchIdRef = useRef<string | null>(null);
+
   /** Upload a single file via the single-file endpoint with real progress */
   const uploadOne = async (item: QueuedFile, allowDuplicate: boolean) => {
     updateFile(item.id, { state: "uploading", progress: 0 });
@@ -359,6 +362,7 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
     try {
       const result = await datasetsApi.uploadWithProgress(item.file, {
         allowDuplicate,
+        batchId: batchIdRef.current ?? undefined,
         onProgress: (pct) => updateFile(item.id, { progress: pct }),
       });
       updateFile(item.id, {
@@ -411,6 +415,23 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
     await Promise.all(workers);
   }
 
+  /** Send a summary notification after all uploads in a batch finish */
+  const sendBatchSummary = useCallback(async () => {
+    const bid = batchIdRef.current;
+    if (!bid) return;
+    const ok = queue.filter((f) => f.state === "complete" || f.state === "processing").length;
+    const fail = queue.filter((f) => f.state === "error" || f.state === "rejected").length;
+    if (ok + fail < 2) return; // No summary for single-file uploads
+    const failedNames = queue
+      .filter((f) => f.state === "error" || f.state === "rejected")
+      .map((f) => f.file.name);
+    try {
+      await datasetsApi.uploadBatchSummary(bid, ok, fail, failedNames);
+    } catch {
+      // Best-effort — don't block the UI
+    }
+  }, [queue]);
+
   /** Upload all pending files — up to 3 concurrent uploads */
   const handleUploadAll = async () => {
     const pending = queue.filter((f) => f.state === "pending");
@@ -423,6 +444,9 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
     }
     setShowLargeWarning(false);
     setIsUploading(true);
+
+    // Generate batch ID for this upload session
+    batchIdRef.current = `upl_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
 
     await runWithConcurrency(pending, (item) => uploadOne(item, false), concurrentUploads);
 
@@ -450,6 +474,9 @@ const FileUploadModal = ({ open, onOpenChange, onSuccess }: FileUploadModalProps
       const ok = queue.filter((f) => f.state === "complete").length;
       const fail = queue.filter((f) => f.state === "error").length;
       const skipped = queue.filter((f) => f.state === "rejected").length;
+
+      // Create summary notification (best-effort, don't block UI)
+      sendBatchSummary();
 
       const parts: string[] = [];
       if (ok > 0) parts.push(`${ok} succeeded`);

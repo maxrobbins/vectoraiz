@@ -10,6 +10,8 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
+from pydantic import BaseModel, Field
+
 from app.core.async_utils import run_sync
 from app.core.errors import VectorAIzError
 from app.services.batch_service import _check_magic_bytes, _MAGIC_SIGNATURES
@@ -80,6 +82,7 @@ async def upload_dataset(
     processing: ProcessingService = Depends(get_processing_service),
     user: AuthenticatedUser = Depends(get_current_user),
     allow_duplicate: bool = Query(False, description="Skip duplicate filename check"),
+    batch_id: Optional[str] = Query(None, description="Optional batch ID to group upload notifications"),
     _meter: MeterDecision = Depends(metered("setup")),
 ):
     """
@@ -168,6 +171,19 @@ async def upload_dataset(
         from app.services.processing_queue import get_processing_queue
         await get_processing_queue().submit(record.id)
 
+        # Create success notification
+        try:
+            get_notification_service().create(
+                type="success",
+                category="upload",
+                title=f"Uploaded: {file.filename}",
+                message=f"File uploaded successfully ({bytes_written} bytes)",
+                batch_id=batch_id,
+                source="upload",
+            )
+        except Exception:
+            logger.warning("Failed to create upload success notification for %s", file.filename)
+
         return JSONResponse(
             status_code=202,  # Accepted
             content={
@@ -178,7 +194,24 @@ async def upload_dataset(
             }
         )
 
-    except HTTPException:
+    except HTTPException as he:
+        # Create error notification for upload failures
+        try:
+            get_notification_service().create(
+                type="error",
+                category="upload",
+                title=f"Upload failed: {file.filename}",
+                message=he.detail if hasattr(he, 'detail') else "Upload failed",
+                metadata_json=json.dumps({
+                    "filename": file.filename,
+                    "error": he.detail if hasattr(he, 'detail') else "Upload failed",
+                    "status_code": he.status_code,
+                }),
+                batch_id=batch_id,
+                source="upload",
+            )
+        except Exception:
+            logger.warning("Failed to create upload error notification for %s", file.filename)
         raise  # Re-raise 413 and 422 without wrapping
     except (ConnectionError, asyncio.CancelledError) as e:
         # BUG-6: Client disconnected during large upload — clean up gracefully
@@ -192,6 +225,22 @@ async def upload_dataset(
     except Exception as e:
         # Clean up on failure
         processing.delete_dataset(record.id)
+        # Create error notification
+        try:
+            get_notification_service().create(
+                type="error",
+                category="upload",
+                title=f"Upload failed: {file.filename}",
+                message=str(e),
+                metadata_json=json.dumps({
+                    "filename": file.filename,
+                    "error": str(e),
+                }),
+                batch_id=batch_id,
+                source="upload",
+            )
+        except Exception:
+            logger.warning("Failed to create upload error notification for %s", file.filename)
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
@@ -234,6 +283,60 @@ async def index_dataset_task(dataset_id: str):
     """Background task to run index phase after confirm."""
     processing = get_processing_service()
     await processing.run_index_phase(dataset_id)
+
+
+# ---------------------------------------------------------------------------
+# Upload batch summary — called by frontend after individual uploads finish
+# ---------------------------------------------------------------------------
+
+class UploadSummaryRequest(BaseModel):
+    batch_id: str
+    accepted: int = Field(ge=0)
+    rejected: int = Field(ge=0)
+    failed_filenames: List[str] = []
+
+
+@router.post("/upload-summary")
+async def upload_batch_summary(
+    body: UploadSummaryRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Create a summary notification after a series of individual uploads."""
+    total = body.accepted + body.rejected
+
+    if body.rejected == 0:
+        summary_type = "info"
+        summary_title = "Upload complete"
+    elif body.accepted == 0:
+        summary_type = "error"
+        summary_title = "Upload failed"
+    else:
+        summary_type = "warning"
+        summary_title = "Upload partially complete"
+
+    summary_msg = f"{body.accepted} of {total} files uploaded successfully."
+    if body.rejected > 0:
+        summary_msg += f" {body.rejected} failed."
+
+    try:
+        get_notification_service().create(
+            type=summary_type,
+            category="upload",
+            title=summary_title,
+            message=summary_msg,
+            metadata_json=json.dumps({
+                "accepted": body.accepted,
+                "rejected": body.rejected,
+                "total": total,
+                "failed_filenames": body.failed_filenames,
+            }),
+            batch_id=body.batch_id,
+            source="upload",
+        )
+    except Exception:
+        logger.warning("Failed to create batch summary notification for %s", body.batch_id)
+
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

@@ -369,12 +369,15 @@ export const datasetsApi = {
   
   uploadWithProgress: (
     file: File,
-    options?: { allowDuplicate?: boolean; onProgress?: (percent: number) => void }
+    options?: { allowDuplicate?: boolean; batchId?: string; onProgress?: (percent: number) => void }
   ): Promise<UploadResponse> => {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      const params = options?.allowDuplicate ? '?allow_duplicate=true' : '';
-      xhr.open('POST', `${getApiUrl()}/api/datasets/upload${params}`);
+      const qp = new URLSearchParams();
+      if (options?.allowDuplicate) qp.set('allow_duplicate', 'true');
+      if (options?.batchId) qp.set('batch_id', options.batchId);
+      const qs = qp.toString();
+      xhr.open('POST', `${getApiUrl()}/api/datasets/upload${qs ? `?${qs}` : ''}`);
 
       const apiKey = getStoredApiKey();
       if (apiKey) {
@@ -393,20 +396,27 @@ export const datasetsApi = {
         if (xhr.status === 401) {
           localStorage.removeItem('vectoraiz_api_key');
         }
-        const body = JSON.parse(xhr.responseText || '{}');
+        let body: Record<string, unknown>;
+        try {
+          body = JSON.parse(xhr.responseText || '{}');
+        } catch {
+          reject(new Error('Upload failed — invalid server response'));
+          return;
+        }
         if (xhr.status === 409 && body.error === 'duplicate_filename') {
-          reject(new DuplicateFileError(body.detail, body.existing_dataset));
+          reject(new DuplicateFileError(body.detail as string, body.existing_dataset as any));
           return;
         }
         if (xhr.status >= 200 && xhr.status < 300) {
           options?.onProgress?.(100);
-          resolve(body);
+          resolve(body as unknown as UploadResponse);
         } else {
-          reject(new Error(body.detail || 'Upload failed'));
+          reject(new Error((body.detail as string) || 'Upload failed'));
         }
       };
 
       xhr.onerror = () => reject(new Error('Network error'));
+      xhr.ontimeout = () => reject(new Error('Upload timed out'));
 
       const formData = new FormData();
       formData.append('file', file);
@@ -475,6 +485,12 @@ export const datasetsApi = {
 
   getBatchStatus: (batchId: string) =>
     apiFetch<BatchStatusResponse>(`/api/datasets/batch/${batchId}`),
+
+  uploadBatchSummary: (batchId: string, accepted: number, rejected: number, failedFilenames: string[]) =>
+    apiFetch<{ ok: boolean }>('/api/datasets/upload-summary', {
+      method: 'POST',
+      body: JSON.stringify({ batch_id: batchId, accepted, rejected, failed_filenames: failedFilenames }),
+    }),
 };
 
 // Search API

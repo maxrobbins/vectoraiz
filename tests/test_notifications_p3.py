@@ -6,6 +6,8 @@ Tests cover:
 - Notifications are created for successes and failures
 - Summary notification is created with correct counts
 - Response includes per-file status
+- Single-file upload creates notifications on success/failure
+- Upload-summary endpoint creates summary notifications
 """
 
 import io
@@ -341,3 +343,186 @@ class TestBatchUploadResilience:
         notifs = svc.list(category="upload")
         error_notifs = [n for n in notifs if n.type == "error" and "bad.xyz" in n.title]
         assert len(error_notifs) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Single-file upload endpoint — notification tests
+# ---------------------------------------------------------------------------
+
+def _patch_single_upload():
+    """Patches for single-file upload tests: processing service, processing queue, aiofiles."""
+    from app.services.processing_service import ProcessingService
+
+    mock_record = MagicMock()
+    mock_record.id = "ds_single_1"
+    mock_record.upload_path = MagicMock()
+    mock_record.upload_path.name = "test_file.csv"
+    mock_record.file_size_bytes = 100
+    mock_record.status = MagicMock()
+    mock_record.status.value = "processing"
+    mock_record.original_filename = "test.csv"
+
+    mock_proc = MagicMock(spec=ProcessingService)
+    mock_proc.create_dataset.return_value = mock_record
+    mock_proc.find_by_filename.return_value = None
+    mock_proc._save_record = MagicMock()
+
+    return mock_proc, mock_record
+
+
+class TestSingleUploadNotifications:
+    """Test that single-file uploads via /api/datasets/upload create notifications."""
+
+    def test_success_creates_notification(self, client, svc):
+        """Successful single-file upload should create a success notification."""
+        mock_proc, mock_record = _patch_single_upload()
+
+        from app.services.processing_service import get_processing_service
+        from app.main import app
+
+        app.dependency_overrides[get_processing_service] = lambda: mock_proc
+
+        with patch("app.services.processing_queue.get_processing_queue", return_value=AsyncMock()), \
+             patch("aiofiles.open", new_callable=lambda: _mock_aiofiles_open), \
+             patch("app.routers.datasets._check_magic_bytes", return_value=True):
+            resp = client.post(
+                "/api/datasets/upload?batch_id=test_batch_123",
+                files={"file": ("test.csv", io.BytesIO(b"a,b\n1,2"), "text/csv")},
+            )
+
+        assert resp.status_code == 202
+
+        notifs = svc.list(category="upload")
+        success_notifs = [n for n in notifs if n.type == "success"]
+        assert len(success_notifs) >= 1
+        assert success_notifs[0].batch_id == "test_batch_123"
+        assert "test.csv" in success_notifs[0].title
+        assert success_notifs[0].source == "upload"
+
+    def test_failure_creates_error_notification(self, client, svc):
+        """Failed single-file upload should create an error notification."""
+        mock_proc, mock_record = _patch_single_upload()
+        # Make magic bytes check fail to trigger an error
+        mock_proc.delete_dataset = MagicMock()
+
+        from app.services.processing_service import get_processing_service
+        from app.main import app
+
+        app.dependency_overrides[get_processing_service] = lambda: mock_proc
+
+        with patch("aiofiles.open", new_callable=lambda: _mock_aiofiles_open), \
+             patch("app.routers.datasets._check_magic_bytes", return_value=False):
+            resp = client.post(
+                "/api/datasets/upload?batch_id=test_batch_456",
+                files={"file": ("bad.csv", io.BytesIO(b"\x89PNG"), "text/csv")},
+            )
+
+        assert resp.status_code == 422
+
+        notifs = svc.list(category="upload")
+        error_notifs = [n for n in notifs if n.type == "error"]
+        assert len(error_notifs) >= 1
+        assert error_notifs[0].batch_id == "test_batch_456"
+        assert "bad.csv" in error_notifs[0].title
+        meta = json.loads(error_notifs[0].metadata_json)
+        assert "filename" in meta
+        assert "error" in meta
+
+    def test_batch_id_optional(self, client, svc):
+        """Upload without batch_id should still create notification (batch_id=None)."""
+        mock_proc, mock_record = _patch_single_upload()
+
+        from app.services.processing_service import get_processing_service
+        from app.main import app
+
+        app.dependency_overrides[get_processing_service] = lambda: mock_proc
+
+        with patch("app.services.processing_queue.get_processing_queue", return_value=AsyncMock()), \
+             patch("aiofiles.open", new_callable=lambda: _mock_aiofiles_open), \
+             patch("app.routers.datasets._check_magic_bytes", return_value=True):
+            resp = client.post(
+                "/api/datasets/upload",
+                files={"file": ("solo.csv", io.BytesIO(b"a,b\n1,2"), "text/csv")},
+            )
+
+        assert resp.status_code == 202
+
+        notifs = svc.list(category="upload")
+        success_notifs = [n for n in notifs if n.type == "success"]
+        assert len(success_notifs) >= 1
+        assert success_notifs[0].batch_id is None
+
+
+# ---------------------------------------------------------------------------
+# Upload summary endpoint tests
+# ---------------------------------------------------------------------------
+
+class TestUploadSummaryEndpoint:
+    """Test the /api/datasets/upload-summary endpoint."""
+
+    def test_summary_partial_success(self, client, svc):
+        """Summary with mixed results should create a warning notification."""
+        resp = client.post(
+            "/api/datasets/upload-summary",
+            json={
+                "batch_id": "upl_abc123",
+                "accepted": 3,
+                "rejected": 2,
+                "failed_filenames": ["bad1.csv", "bad2.csv"],
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+        notifs = svc.list(category="upload")
+        summary = [n for n in notifs if "files uploaded" in n.message]
+        assert len(summary) == 1
+        assert summary[0].type == "warning"
+        assert summary[0].title == "Upload partially complete"
+        assert "3 of 5" in summary[0].message
+        assert "2 failed" in summary[0].message
+        assert summary[0].batch_id == "upl_abc123"
+
+        meta = json.loads(summary[0].metadata_json)
+        assert meta["accepted"] == 3
+        assert meta["rejected"] == 2
+        assert sorted(meta["failed_filenames"]) == ["bad1.csv", "bad2.csv"]
+
+    def test_summary_all_success(self, client, svc):
+        """Summary with all successes should create an info notification."""
+        resp = client.post(
+            "/api/datasets/upload-summary",
+            json={
+                "batch_id": "upl_def456",
+                "accepted": 5,
+                "rejected": 0,
+                "failed_filenames": [],
+            },
+        )
+
+        assert resp.status_code == 200
+        notifs = svc.list(category="upload")
+        summary = [n for n in notifs if "files uploaded" in n.message]
+        assert len(summary) == 1
+        assert summary[0].type == "info"
+        assert summary[0].title == "Upload complete"
+
+    def test_summary_all_failed(self, client, svc):
+        """Summary with all failures should create an error notification."""
+        resp = client.post(
+            "/api/datasets/upload-summary",
+            json={
+                "batch_id": "upl_ghi789",
+                "accepted": 0,
+                "rejected": 3,
+                "failed_filenames": ["a.csv", "b.csv", "c.csv"],
+            },
+        )
+
+        assert resp.status_code == 200
+        notifs = svc.list(category="upload")
+        summary = [n for n in notifs if "files uploaded" in n.message]
+        assert len(summary) == 1
+        assert summary[0].type == "error"
+        assert summary[0].title == "Upload failed"
