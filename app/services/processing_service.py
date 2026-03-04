@@ -967,7 +967,20 @@ class ProcessingService:
         try:
             from app.services.pii_service import get_pii_service
             pii_service = get_pii_service()
-            pii_result = pii_service.scan_dataset(record.processed_path)
+
+            if record.file_type and record.file_type.lower() in (DOCUMENT_TYPES | TEXT_TYPES):
+                # Text-based files: scan extracted text content
+                text_blocks = []
+                if record.document_content and "text_content" in record.document_content:
+                    text_blocks = record.document_content["text_content"]
+                if text_blocks:
+                    pii_result = pii_service.scan_text_content(text_blocks)
+                else:
+                    pii_result = {"status": "skipped", "reason": "no_text_content"}
+            else:
+                # Tabular files: scan via DuckDB (existing path)
+                pii_result = pii_service.scan_dataset(record.processed_path)
+
             record.metadata["pii_scan"] = pii_result
         except Exception as e:
             record.metadata["pii_scan"] = {"status": "scan_failed", "error": str(e)}

@@ -308,6 +308,89 @@ class PIIService:
         # Ensure score doesn't go below 0
         return max(0.0, round(score, 1))
     
+    def scan_text_content(
+        self,
+        text_blocks: List[str],
+        sample_size: int = 50,
+        entities: Optional[List[str]] = None,
+        score_threshold: float = DEFAULT_SCORE_THRESHOLD,
+    ) -> Dict[str, Any]:
+        """Scan extracted text content (from documents) for PII.
+
+        Unlike scan_dataset() which reads tabular files via DuckDB,
+        this scans raw text blocks from document extraction (Tika, etc.).
+
+        Args:
+            text_blocks: List of text strings (extracted document content)
+            sample_size: Max number of blocks to sample
+            entities: Entity types to detect (None = all)
+            score_threshold: Minimum confidence score
+
+        Returns:
+            PII scan results in the same format as scan_dataset(),
+            using "document_content" as a pseudo-column name.
+        """
+        import random
+
+        start_time = datetime.utcnow()
+        entities = entities or DEFAULT_ENTITIES
+        total_blocks = len(text_blocks)
+
+        # Sample blocks if there are too many
+        if total_blocks > sample_size:
+            sampled = random.sample(text_blocks, sample_size)
+        else:
+            sampled = list(text_blocks)
+
+        # Use a single PIIResult to aggregate all findings under a pseudo-column
+        result = PIIResult("document_content")
+
+        for block in sampled:
+            if not block or not isinstance(block, str):
+                continue
+            # Truncate very long blocks to avoid slow NLP processing
+            text = block[:10000] if len(block) > 10000 else block
+            if not text.strip():
+                continue
+
+            pii_matches = self.scan_text(text, entities, score_threshold)
+            for match in pii_matches:
+                result.add_match(
+                    entity_type=match.entity_type,
+                    confidence=match.score,
+                    sample_value=text[match.start:match.end],
+                )
+
+        # Build column_results in same format as scan_dataset
+        columns_with_pii = [result.to_dict()] if result.pii_detected else []
+
+        # Calculate overall risk
+        overall_risk = result._calculate_risk_level()
+
+        # Calculate privacy score (AUTHORITATIVE)
+        privacy_score = self._calculate_privacy_score(columns_with_pii, overall_risk)
+
+        end_time = datetime.utcnow()
+        duration_seconds = (end_time - start_time).total_seconds()
+
+        return {
+            "scanned_at": start_time.isoformat(),
+            "total_rows": total_blocks,
+            "rows_sampled": len(sampled),
+            "total_columns": 1,
+            "columns_with_pii": len(columns_with_pii),
+            "columns_clean": 0 if result.pii_detected else 1,
+            "overall_risk": overall_risk,
+            "privacy_score": privacy_score,
+            "column_results": columns_with_pii,
+            "clean_columns": [] if result.pii_detected else ["document_content"],
+            "duration_seconds": round(duration_seconds, 2),
+            "entities_checked": entities,
+            "scan_type": "text_content",
+            "total_blocks": total_blocks,
+            "blocks_sampled": len(sampled),
+        }
+
     def scan_dataset(
         self,
         filepath: Path,

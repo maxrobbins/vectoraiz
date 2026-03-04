@@ -268,7 +268,9 @@ const PublishModal = ({ open, onOpenChange, dataset, onPublishSuccess }: Publish
                           }`} />
                           <div className="flex-1">
                             <p className="text-sm font-medium text-foreground">
-                              <code className="bg-secondary px-1 rounded">{warning.column}</code>
+                              <code className="bg-secondary px-1 rounded">
+                                {warning.column === "document_content" ? "Document Content" : warning.column}
+                              </code>
                               <Badge variant="outline" className="ml-2 text-xs">
                                 {warning.riskLevel} risk
                               </Badge>
@@ -278,6 +280,7 @@ const PublishModal = ({ open, onOpenChange, dataset, onPublishSuccess }: Publish
                               {warning.count && ` (${warning.count.toLocaleString()} samples)`}
                             </p>
                           </div>
+                          {warning.column !== "document_content" && (
                           <div className="flex items-center gap-2">
                             <Checkbox
                               checked={excludedColumns.includes(warning.column)}
@@ -285,6 +288,7 @@ const PublishModal = ({ open, onOpenChange, dataset, onPublishSuccess }: Publish
                             />
                             <span className="text-xs text-muted-foreground">Exclude</span>
                           </div>
+                          )}
                         </div>
                       ))
                     )}
