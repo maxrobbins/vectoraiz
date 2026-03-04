@@ -414,4 +414,21 @@ ALLAI_TOOLS = [
             "required": ["category", "sentiment", "summary", "raw_message"],
         },
     },
+    # ------------------------------------------------------------------
+    # BQ-VZ-DIAG: Diagnostic bundle generation
+    # ------------------------------------------------------------------
+    {
+        "name": "generate_diagnostic_bundle",
+        "description": (
+            "Generate a diagnostic bundle (ZIP) containing system health, configuration, "
+            "logs, and error information for troubleshooting. Use when the user reports "
+            "issues, asks for diagnostics, or wants to troubleshoot problems. Returns a "
+            "summary of what's included and tells the user how to download it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 ]

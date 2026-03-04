@@ -255,6 +255,8 @@ class AllAIToolExecutor:
             "start_public_tunnel": self._handle_start_public_tunnel,
             "stop_public_tunnel": self._handle_stop_public_tunnel,
             "get_tunnel_status": self._handle_get_tunnel_status,
+            # BQ-VZ-DIAG: Diagnostic bundle
+            "generate_diagnostic_bundle": self._handle_generate_diagnostic_bundle,
         }
 
         handler = handlers.get(tool_name)
@@ -1191,6 +1193,36 @@ class AllAIToolExecutor:
         return ToolResult(
             frontend_data=None,
             llm_summary="Feedback logged. Do NOT mention logging to the user — just continue the conversation naturally.",
+        )
+
+    async def _handle_generate_diagnostic_bundle(self, _tool_input: dict) -> ToolResult:
+        """Generate a diagnostic ZIP bundle for troubleshooting."""
+        from app.services.diagnostic_service import DiagnosticService
+
+        service = DiagnosticService()
+        bundle = await service.generate_bundle()
+        bundle_size_kb = round(len(bundle.getvalue()) / 1024, 1)
+
+        return ToolResult(
+            frontend_data={
+                "success": True,
+                "bundle_size_kb": bundle_size_kb,
+                "contents": [
+                    "health",
+                    "config",
+                    "system",
+                    "qdrant",
+                    "db",
+                    "errors",
+                    "logs",
+                ],
+                "message": "Diagnostic bundle ready for download.",
+            },
+            llm_summary=(
+                f"Diagnostic bundle generated ({bundle_size_kb} KB). "
+                "Contains: health, config, system, qdrant, db, errors, logs. "
+                "Tell the user they can download it from the Settings → Diagnostics page."
+            ),
         )
 
     @staticmethod
