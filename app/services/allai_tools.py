@@ -483,4 +483,22 @@ ALLAI_TOOLS = [
             "required": [],
         },
     },
+    # ------------------------------------------------------------------
+    # BQ-VZ-NOTIFICATIONS Phase 4: Diagnostic transmission
+    # ------------------------------------------------------------------
+    {
+        "name": "prepare_support_bundle",
+        "description": (
+            "Prepare a diagnostic support bundle and notify the user so they can approve "
+            "sending it to ai.market support. Use when the user wants to send diagnostics "
+            "to support, report a technical issue to the vectorAIz team, or needs help "
+            "troubleshooting. The bundle is NOT sent automatically — the user must click "
+            "'Approve & Send' in their notifications to transmit it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 ]

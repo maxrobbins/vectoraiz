@@ -257,6 +257,8 @@ class AllAIToolExecutor:
             "get_tunnel_status": self._handle_get_tunnel_status,
             # BQ-VZ-DIAG: Diagnostic bundle
             "generate_diagnostic_bundle": self._handle_generate_diagnostic_bundle,
+            # BQ-VZ-NOTIFICATIONS Phase 4: Diagnostic transmission
+            "prepare_support_bundle": self._handle_prepare_support_bundle,
             # BQ-VZ-NOTIFICATIONS: Notification tools
             "get_notifications": self._handle_get_notifications,
             "create_notification": self._handle_create_notification,
@@ -1225,6 +1227,72 @@ class AllAIToolExecutor:
                 f"Diagnostic bundle generated ({bundle_size_kb} KB). "
                 "Contains: health, config, system, qdrant, db, errors, logs. "
                 "Tell the user they can download it from the Settings → Diagnostics page."
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # BQ-VZ-NOTIFICATIONS Phase 4: Diagnostic transmission
+    # ------------------------------------------------------------------
+
+    async def _handle_prepare_support_bundle(self, _tool_input: dict) -> ToolResult:
+        """Generate a diagnostic bundle and create an action_required notification.
+
+        The user must click 'Approve & Send' in the notification to transmit.
+        """
+        import json
+        from app.services.diagnostic_service import DiagnosticService
+        from app.services.notification_service import get_notification_service
+
+        service = DiagnosticService()
+        bundle = await service.generate_bundle()
+        bundle_size_bytes = len(bundle.getvalue())
+        bundle_size_kb = round(bundle_size_bytes / 1024, 1)
+
+        contents = [
+            "health snapshot",
+            "redacted config",
+            "system info",
+            "qdrant status",
+            "database schema",
+            "error registry",
+            "recent logs (redacted)",
+            "active issues",
+            "async tasks",
+            "connectivity status",
+        ]
+
+        svc = get_notification_service()
+        svc.create(
+            type="action_required",
+            category="diagnostic",
+            title="Diagnostic bundle ready for support",
+            message=(
+                f"A diagnostic bundle ({bundle_size_kb} KB) has been prepared. "
+                "It contains system health, redacted configuration, and logs. "
+                "All secrets, API keys, emails, and PII have been scrubbed. "
+                "Click 'Send to Support' to transmit it to ai.market."
+            ),
+            metadata_json=json.dumps({
+                "action": "transmit_diagnostic",
+                "bundle_size_bytes": bundle_size_bytes,
+                "contents": contents,
+            }),
+            source="allai",
+        )
+
+        return ToolResult(
+            frontend_data={
+                "success": True,
+                "bundle_size_kb": bundle_size_kb,
+                "contents": contents,
+                "message": "Bundle prepared. User has been notified to approve transmission.",
+            },
+            llm_summary=(
+                f"Diagnostic support bundle prepared ({bundle_size_kb} KB). "
+                "Contains: health, config, system, qdrant, db, errors, logs (all PII-scrubbed). "
+                "An action_required notification has been created. The user needs to click "
+                "'Send to Support' in their notifications to transmit the bundle to ai.market. "
+                "Tell the user to check their notifications (bell icon) to approve sending."
             ),
         )
 

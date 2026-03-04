@@ -12,8 +12,10 @@ import {
   AlertCircle,
   Info,
   Bell,
+  Send,
+  Loader2,
 } from "lucide-react";
-import { notificationsApi, type ApiNotification } from "@/lib/api";
+import { notificationsApi, diagnosticsApi, type ApiNotification } from "@/lib/api";
 
 const typeConfig: Record<string, { icon: typeof Info; color: string }> = {
   success: { icon: CheckCircle2, color: "text-green-500" },
@@ -34,6 +36,17 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
+/** Check if a notification is a diagnostic transmission action */
+function isDiagnosticAction(n: ApiNotification): boolean {
+  if (n.type !== "action_required" || n.category !== "diagnostic") return false;
+  try {
+    const meta = n.metadata_json ? JSON.parse(n.metadata_json) : null;
+    return meta?.action === "transmit_diagnostic";
+  } catch {
+    return false;
+  }
+}
+
 interface NotificationSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -47,6 +60,7 @@ export default function NotificationSheet({
 }: NotificationSheetProps) {
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
   const [loading, setLoading] = useState(false);
+  const [transmitting, setTransmitting] = useState<string | null>(null);
 
   const fetchNotifications = async () => {
     setLoading(true);
@@ -86,6 +100,26 @@ export default function NotificationSheet({
     }
   };
 
+  const handleTransmitDiagnostic = async (notificationId: string) => {
+    setTransmitting(notificationId);
+    try {
+      await diagnosticsApi.transmit();
+      // Mark the action notification as read
+      await notificationsApi.markRead(notificationId);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
+      );
+      // Refresh to show the new success notification
+      await fetchNotifications();
+    } catch (err) {
+      // Show inline error — don't swallow
+      const msg = err instanceof Error ? err.message : "Transmission failed";
+      alert(msg);
+    } finally {
+      setTransmitting(null);
+    }
+  };
+
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
@@ -122,36 +156,62 @@ export default function NotificationSheet({
             {notifications.map((n) => {
               const cfg = typeConfig[n.type] || typeConfig.info;
               const Icon = cfg.icon;
+              const showTransmitButton = isDiagnosticAction(n) && !n.read;
+              const isTransmitting = transmitting === n.id;
+
               return (
-                <button
-                  key={n.id}
-                  className={`w-full text-left p-3 rounded-lg transition-colors cursor-pointer ${
-                    n.read
-                      ? "opacity-60 hover:bg-secondary/50"
-                      : "bg-secondary/50 hover:bg-secondary"
-                  }`}
-                  onClick={() => !n.read && handleMarkRead(n.id)}
-                >
-                  <div className="flex gap-3">
-                    <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${cfg.color}`} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium truncate">
-                          {n.title}
+                <div key={n.id}>
+                  <button
+                    className={`w-full text-left p-3 rounded-lg transition-colors cursor-pointer ${
+                      n.read
+                        ? "opacity-60 hover:bg-secondary/50"
+                        : "bg-secondary/50 hover:bg-secondary"
+                    }`}
+                    onClick={() => !n.read && !showTransmitButton && handleMarkRead(n.id)}
+                  >
+                    <div className="flex gap-3">
+                      <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${cfg.color}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">
+                            {n.title}
+                          </span>
+                          {!n.read && (
+                            <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                          {n.message}
+                        </p>
+                        <span className="text-[10px] text-muted-foreground mt-1 block">
+                          {timeAgo(n.created_at)}
                         </span>
-                        {!n.read && (
-                          <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                        {n.message}
-                      </p>
-                      <span className="text-[10px] text-muted-foreground mt-1 block">
-                        {timeAgo(n.created_at)}
-                      </span>
                     </div>
-                  </div>
-                </button>
+                  </button>
+
+                  {showTransmitButton && (
+                    <div className="ml-10 mt-1 mb-2">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className="gap-1.5 text-xs"
+                        disabled={isTransmitting}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTransmitDiagnostic(n.id);
+                        }}
+                      >
+                        {isTransmitting ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Send className="w-3 h-3" />
+                        )}
+                        {isTransmitting ? "Sending..." : "Send Diagnostic to ai.market Support"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>

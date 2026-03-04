@@ -629,6 +629,19 @@ export const notificationsApi = {
     apiFetch<{ message: string }>(`/api/notifications/${id}`, { method: 'DELETE' }),
 };
 
+// Diagnostics API (Phase 4)
+export interface DiagnosticTransmitResponse {
+  success: boolean;
+  transmission_id: string;
+  timestamp: string;
+  size_bytes: number;
+}
+
+export const diagnosticsApi = {
+  transmit: () =>
+    apiFetch<DiagnosticTransmitResponse>('/api/diagnostics/transmit', { method: 'POST' }),
+};
+
 // Auth types
 export interface AuthUser {
   id: string;
