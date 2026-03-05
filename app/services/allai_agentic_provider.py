@@ -1,26 +1,21 @@
 """
 Agentic LLM Provider — Tool-use loop for allAI.
 
-[COUNCIL MANDATES APPLIED]:
-- Proxy-mediated LLM calls via ai.market (primary path)
-- Direct Anthropic SDK as fallback (temporary bridge)
+Architecture:
+- All LLM calls go through ai.market proxy (POST /api/v1/allie/chat/agentic)
+- No local Anthropic API key needed
 - Max 5 tool iterations (hard cap)
 - Two-track tool results (rich→frontend, summary→LLM)
 - Heartbeat during tool execution (WS resilience)
 
-Architecture:
-1. Try ai.market proxy with tools support first
-2. If proxy doesn't support tools (non-200 or error), fall back to direct Anthropic SDK
-3. Direct calls use anthropic Python SDK with the user's configured connection
-
 PHASE: BQ-ALLAI-B3 — Agentic LLM Loop
 CREATED: 2026-02-16
+UPDATED: 2026-03-05 — Proxy-only path via ai.market /agentic endpoint
 """
 
 import asyncio
 import json
 import logging
-import os
 import uuid
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
@@ -37,13 +32,8 @@ HEARTBEAT_INTERVAL_S = 5
 
 class AgenticAllieProvider:
     """
-    Agentic LLM provider that supports tool-use loops.
-
-    Falls back from ai.market proxy → direct Anthropic SDK.
+    Agentic LLM provider that supports tool-use loops via ai.market proxy.
     """
-
-    def __init__(self) -> None:
-        self._anthropic_client = None
 
     async def run_agentic_loop(
         self,
@@ -62,14 +52,6 @@ class AgenticAllieProvider:
         3. If response has text → stream to frontend
         4. Repeat until text-only response or max iterations
 
-        Args:
-            messages: Conversation messages (user + assistant history)
-            system_prompt: System prompt for the LLM
-            tools: Tool definitions in Anthropic format
-            tool_executor: Executor for running tools (handles auth, sandbox, WS)
-            send_chunk: Callback to stream text chunks to frontend
-            send_heartbeat: Callback to keep WS alive during tool execution
-
         Returns:
             (full_text, usage) tuple
         """
@@ -83,7 +65,7 @@ class AgenticAllieProvider:
             # Send heartbeat before LLM call
             await send_heartbeat()
 
-            # Call LLM (non-streaming for tool calls, we stream text ourselves)
+            # Call LLM via ai.market proxy
             response = await self._call_llm(messages, system_prompt, tools)
 
             # Track usage
@@ -146,76 +128,22 @@ class AgenticAllieProvider:
         tools: List[dict],
     ) -> dict:
         """
-        Call the LLM. Tries ai.market proxy first, falls back to direct Anthropic.
+        Call the LLM via ai.market proxy.
 
         Returns a dict with:
         - content: list of content blocks
         - usage: {input_tokens, output_tokens}
         - model: model name
+        - stop_reason: e.g. "tool_use" or "end_turn"
         """
-        # Try direct Anthropic SDK (more reliable for tool use)
-        try:
-            return await self._call_anthropic_direct(messages, system_prompt, tools)
-        except Exception as e:
-            logger.warning("Direct Anthropic call failed: %s", e)
-
-        # Try ai.market proxy
         try:
             return await self._call_proxy(messages, system_prompt, tools)
+        except AllieDisabledError:
+            raise
         except Exception as e:
-            logger.warning("ai.market proxy call failed: %s", e)
             raise AllieDisabledError(
-                f"Both LLM providers failed. Direct: unavailable. Proxy: {str(e)[:100]}"
-            )
-
-    async def _call_anthropic_direct(
-        self,
-        messages: List[dict],
-        system_prompt: str,
-        tools: List[dict],
-    ) -> dict:
-        """Call Anthropic API directly using the anthropic Python SDK."""
-        import anthropic
-
-        api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("VECTORAIZ_ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError("No Anthropic API key configured (ANTHROPIC_API_KEY or VECTORAIZ_ANTHROPIC_API_KEY)")
-
-        if self._anthropic_client is None:
-            self._anthropic_client = anthropic.AsyncAnthropic(api_key=api_key)
-
-        model = os.environ.get("ALLAI_MODEL", "claude-sonnet-4-20250514")
-
-        response = await self._anthropic_client.messages.create(
-            model=model,
-            max_tokens=4096,
-            system=system_prompt,
-            messages=messages,
-            tools=tools,
-        )
-
-        # Convert to our dict format
-        content_blocks = []
-        for block in response.content:
-            if block.type == "text":
-                content_blocks.append({"type": "text", "text": block.text})
-            elif block.type == "tool_use":
-                content_blocks.append({
-                    "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
-                })
-
-        return {
-            "content": content_blocks,
-            "usage": {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-            },
-            "model": response.model,
-            "stop_reason": response.stop_reason,
-        }
+                f"ai.market agentic call failed: {str(e)[:200]}"
+            ) from e
 
     async def _call_proxy(
         self,
@@ -223,7 +151,7 @@ class AgenticAllieProvider:
         system_prompt: str,
         tools: List[dict],
     ) -> dict:
-        """Call ai.market proxy for tool-enabled LLM request."""
+        """Call ai.market proxy for tool-enabled agentic LLM request."""
         from app.config import settings
 
         base_url = settings.ai_market_url.rstrip("/")
@@ -231,17 +159,18 @@ class AgenticAllieProvider:
         if not api_key:
             raise ValueError("VECTORAIZ_INTERNAL_API_KEY required for ai.market proxy")
 
-        url = f"{base_url}/api/v1/allie/chat"
+        url = f"{base_url}/api/v1/allie/chat/agentic"
         headers = {
             "Content-Type": "application/json",
             "X-API-Key": api_key,
+            "X-Serial": settings.serial or "",
         }
         body = {
             "messages": messages,
             "system": system_prompt,
             "tools": tools,
+            "max_tokens": 4096,
             "request_id": f"agentic_{uuid.uuid4().hex[:12]}",
-            "stream": False,
         }
 
         timeout = httpx.Timeout(120, connect=10)
@@ -269,12 +198,13 @@ class AgenticAllieProvider:
         """Merge usage from multiple iterations."""
         new_input = new_usage.get("input_tokens", 0)
         new_output = new_usage.get("output_tokens", 0)
+        new_cost = new_usage.get("cost_cents", 0)
 
         if existing:
             return AllieUsage(
                 input_tokens=existing.input_tokens + new_input,
                 output_tokens=existing.output_tokens + new_output,
-                cost_cents=existing.cost_cents + max(1, (new_input + new_output) // 100),
+                cost_cents=existing.cost_cents + new_cost,
                 provider=existing.provider,
                 model=existing.model,
             )
@@ -282,7 +212,7 @@ class AgenticAllieProvider:
         return AllieUsage(
             input_tokens=new_input,
             output_tokens=new_output,
-            cost_cents=max(1, (new_input + new_output) // 100),
+            cost_cents=new_cost,
             provider="anthropic",
             model=model,
         )

@@ -846,14 +846,8 @@ async def websocket_copilot(websocket: WebSocket):
                     manager.set_intro_seen(sid, True)
             is_first = not manager.get_intro_seen(sid)
 
-            # BQ-ALLAI-B: Try agentic loop if an Anthropic API key is configured
-            import os as _os
-            _has_anthropic = bool(
-                _os.environ.get("ANTHROPIC_API_KEY")
-                or _os.environ.get("VECTORAIZ_ANTHROPIC_API_KEY")
-            )
-
-            if _has_anthropic:
+            # BQ-ALLAI-B: Use agentic loop (tools via ai.market proxy) in connected mode
+            if not is_local_only():
                 try:
                     full_text, usage = await copilot_service.process_message_agentic(
                         user=session_user,
@@ -889,7 +883,7 @@ async def websocket_copilot(websocket: WebSocket):
                         chat_history=chat_history,
                     )
             else:
-                # No Anthropic key — use classic streaming path
+                # Standalone mode — no tools, use classic streaming path
                 full_text, usage = await copilot_service.process_message_streaming(
                     user=session_user,
                     message=user_message,
