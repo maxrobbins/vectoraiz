@@ -25,7 +25,7 @@ class SearchRequest(BaseModel):
     min_score: Optional[float] = None
 
 
-@router.get("/")
+@router.get("")
 async def search_get(
     q: str = Query(..., description="Search query"),
     dataset_id: Optional[str] = Query(None, description="Search within specific dataset"),
@@ -47,14 +47,22 @@ async def search_get(
         )
         return results
     except ValueError as e:
-        raise VectorAIzError("VAI-RAG-001", detail=str(e))
+        # Return empty results instead of 404 — let frontend show "no results" state
+        return {
+            "query": q,
+            "results": [],
+            "total": 0,
+            "datasets_searched": 0,
+            "duration_ms": 0,
+            "message": str(e),
+        }
     except ConnectionError:
         raise VectorAIzError("VAI-QDR-001", detail="Qdrant connection refused during search")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/")
+@router.post("")
 async def search_post(
     request: SearchRequest,
     search_service: SearchService = Depends(get_search_service),
@@ -73,7 +81,14 @@ async def search_post(
         )
         return results
     except ValueError as e:
-        raise VectorAIzError("VAI-RAG-001", detail=str(e))
+        return {
+            "query": request.query,
+            "results": [],
+            "total": 0,
+            "datasets_searched": 0,
+            "duration_ms": 0,
+            "message": str(e),
+        }
     except ConnectionError:
         raise VectorAIzError("VAI-QDR-001", detail="Qdrant connection refused during search")
     except Exception as e:

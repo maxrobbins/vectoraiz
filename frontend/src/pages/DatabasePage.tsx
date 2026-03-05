@@ -176,7 +176,7 @@ const DatabasePage = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await databaseApi.list();
+      const data = await databaseApi.list().catch(() => [] as DatabaseConnection[]);
       setConnections(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load connections");

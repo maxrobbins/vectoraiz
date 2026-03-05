@@ -44,7 +44,7 @@ const SearchPage = () => {
   const [searchParams] = useSearchParams();
   const datasetParam = searchParams.get("dataset");
 
-  const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string>("__all__");
   const [searchQuery, setSearchQuery] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<SearchResult | null>(null);
@@ -68,9 +68,12 @@ const SearchPage = () => {
     }
   }, [datasetParam, datasets]);
 
-  const selectedDataset = selectedDatasetId
-    ? datasets.find(d => d.id === selectedDatasetId)
-    : null;
+  const isAllDatasets = selectedDatasetId === "__all__";
+  const selectedDataset = isAllDatasets
+    ? { id: "__all__", name: "All datasets", status: "ready" }
+    : selectedDatasetId
+      ? datasets.find(d => d.id === selectedDatasetId)
+      : null;
 
   const handleExampleClick = (query: string) => {
     setSearchQuery(query);
@@ -85,11 +88,11 @@ const SearchPage = () => {
     if (!selectedDataset) return;
 
     setHasSearched(true);
-    await search(searchQuery, { dataset_id: selectedDatasetId });
+    await search(searchQuery, isAllDatasets ? {} : { dataset_id: selectedDatasetId });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && selectedDataset) {
+    if (e.key === "Enter" && (selectedDataset || isAllDatasets)) {
       handleSearch();
     }
   };
@@ -154,6 +157,7 @@ const SearchPage = () => {
               <SelectValue placeholder="Choose a dataset..." />
             </SelectTrigger>
             <SelectContent className="bg-card border-border z-50">
+              <SelectItem value="__all__">All datasets</SelectItem>
               {datasets.map((dataset) => (
                 <SelectItem key={dataset.id} value={dataset.id}>
                   {dataset.name}
@@ -175,12 +179,12 @@ const SearchPage = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             className="pl-10 h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-            disabled={!selectedDataset}
+            disabled={!selectedDataset && !isAllDatasets}
           />
         </div>
         <Button
           className="h-12 px-6"
-          disabled={!selectedDataset || isSearching}
+          disabled={(!selectedDataset && !isAllDatasets) || isSearching}
           onClick={handleSearch}
         >
           {isSearching ? (

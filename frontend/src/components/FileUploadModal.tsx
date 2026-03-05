@@ -480,7 +480,19 @@ const FileUploadModal = () => {
               </div>
               {hasFailures && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  See <span className="text-foreground font-medium">Notifications</span> for error details
+                  See{" "}
+                  <button
+                    type="button"
+                    className="text-foreground font-medium underline underline-offset-2 hover:text-primary transition-colors"
+                    onClick={() => {
+                      closeModal();
+                      // Open notification sheet by clicking the bell button
+                      setTimeout(() => document.querySelector<HTMLButtonElement>('[data-notification-bell]')?.click(), 100);
+                    }}
+                  >
+                    Notifications
+                  </button>{" "}
+                  for error details
                 </p>
               )}
             </div>

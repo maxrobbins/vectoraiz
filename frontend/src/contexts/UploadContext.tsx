@@ -303,6 +303,11 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
   // ----- modal -----
   const openModal = useCallback(() => {
+    // Auto-reset stale completed results when reopening
+    setQueue((prev) => {
+      const allFinished = prev.length > 0 && prev.every((f) => f.state === "complete" || f.state === "error" || f.state === "rejected");
+      return allFinished ? [] : prev;
+    });
     setIsModalOpen(true);
   }, []);
 

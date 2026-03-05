@@ -109,6 +109,7 @@ const mapApiDatasetToFrontend = (apiDataset: ApiDataset): Dataset => ({
   status: apiDataset.status === "ready" ? "ready" as const
     : apiDataset.status === "error" ? "error" as const
     : apiDataset.status === "preview_ready" ? "preview_ready" as const
+    : apiDataset.status === "cancelled" ? "error" as const
     : "processing" as const,
   rows: apiDataset.metadata?.row_count || 0,
   columns: apiDataset.metadata?.column_count || 0,
@@ -348,6 +349,13 @@ const DatasetDetail = () => {
                   >
                     Preview Ready
                   </Badge>
+                ) : dataset.status === "error" ? (
+                  <Badge
+                    variant="secondary"
+                    className="bg-destructive/20 text-destructive border-destructive/30"
+                  >
+                    Failed
+                  </Badge>
                 ) : (
                   <Badge
                     variant="secondary"
@@ -406,6 +414,23 @@ const DatasetDetail = () => {
           )}
         </div>
       </div>
+
+      {/* Error/failed status message */}
+      {dataset.status === "error" && (
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardContent className="py-6">
+            <div className="flex items-center gap-3">
+              <Database className="w-8 h-8 text-destructive" />
+              <div>
+                <h3 className="text-base font-semibold text-foreground">Processing Failed</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {apiDataset.error || "This dataset failed during processing. You can delete it and re-upload."}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Preview UI for preview_ready status */}
       {dataset.status === "preview_ready" && (
@@ -601,7 +626,7 @@ const DatasetDetail = () => {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent border-border">
-                    {Object.keys(sampleData[0]).map((key) => (
+                    {(sampleData[0] ? Object.keys(sampleData[0]) : []).map((key) => (
                       <TableHead key={key} className="whitespace-nowrap">
                         {key}
                       </TableHead>

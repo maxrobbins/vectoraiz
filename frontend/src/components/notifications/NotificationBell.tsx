@@ -44,6 +44,7 @@ export default function NotificationBell() {
             variant="ghost"
             size="icon"
             className="relative w-9 h-9"
+            data-notification-bell
             onClick={() => setSheetOpen(true)}
           >
             <Bell className="w-4 h-4 text-muted-foreground" />

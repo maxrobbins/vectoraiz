@@ -57,7 +57,9 @@ async function apiFetch<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new Error(error.detail || `API error: ${response.status}`);
+    // Support both flat { detail: "..." } and structured { error: { safe_message: "..." } } formats
+    const message = error.detail || error.error?.safe_message || error.error?.title || `API error: ${response.status}`;
+    throw new Error(message);
   }
 
   return response.json();

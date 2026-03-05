@@ -116,7 +116,7 @@ const SettingsPage = () => {
   interface ApiKeyInfo { key_id: string; label: string; scopes: string[]; created_at: string; last_used_at: string | null; revoked: boolean; }
   const [localKeys, setLocalKeys] = useState<ApiKeyInfo[]>([]);
   const [keysLoading, setKeysLoading] = useState(false);
-  const [newKeyLabel, setNewKeyLabel] = useState("Untitled");
+  const [newKeyLabel, setNewKeyLabel] = useState("");
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [showCreatedKeyDialog, setShowCreatedKeyDialog] = useState(false);
 
@@ -215,13 +215,13 @@ const SettingsPage = () => {
       const res = await fetch(`${getApiUrl()}/api/auth/keys`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': storedKey },
-        body: JSON.stringify({ label: newKeyLabel || 'Untitled' }),
+        body: JSON.stringify({ label: newKeyLabel.trim() || 'My API Key' }),
       });
       if (res.ok) {
         const data = await res.json();
         setCreatedKey(data.full_key);
         setShowCreatedKeyDialog(true);
-        setNewKeyLabel("Untitled");
+        setNewKeyLabel("");
         fetchLocalKeys();
       } else {
         const err = await res.json().catch(() => ({ detail: 'Failed to create key' }));
@@ -538,11 +538,16 @@ const SettingsPage = () => {
             <p className="text-sm text-muted-foreground py-4 text-center">No API keys found.</p>
           ) : (
             <div className="space-y-2">
-              {localKeys.filter(k => !k.revoked).map((key) => (
+              {localKeys.filter(k => !k.revoked).map((key) => {
+                const isSystemKey = key.label === "Admin (setup)" || key.label?.startsWith("Login (");
+                return (
                 <div key={key.key_id} className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
                   <div className="space-y-0.5 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground">{key.label}</span>
+                      {isSystemKey && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">System</span>
+                      )}
                       <span className="text-xs font-mono text-muted-foreground">vz_{key.key_id}_****</span>
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -550,6 +555,18 @@ const SettingsPage = () => {
                       {key.last_used_at && ` \u00B7 Last used ${new Date(key.last_used_at).toLocaleDateString()}`}
                     </div>
                   </div>
+                  {isSystemKey ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="sm" className="text-muted-foreground" disabled>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>System keys cannot be deleted</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
@@ -572,8 +589,10 @@ const SettingsPage = () => {
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

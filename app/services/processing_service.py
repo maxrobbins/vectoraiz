@@ -123,7 +123,7 @@ def _db_to_record(db_row) -> DatasetRecord:
     # Map legacy status values to new DatasetStatus enum
     status_map = {
         "uploading": DatasetStatus.UPLOADED,
-        "processing": DatasetStatus.READY,
+        "processing": DatasetStatus.EXTRACTING,
         "failed": DatasetStatus.ERROR,
     }
     raw_status = db_row.status
