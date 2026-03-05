@@ -262,7 +262,10 @@ class SQLService:
         limit = min(limit, MAX_ROW_LIMIT)
 
         # Resolve datasets to expose
-        datasets = self._resolve_datasets(dataset_id)
+        # NOTE: variable deliberately named _ds_views (not "datasets") to avoid
+        # DuckDB replacement-scan picking up a Python local when a user query
+        # references an unresolved table called "datasets".
+        _ds_views = self._resolve_datasets(dataset_id)
 
         # Prepare user query: strip semicolons, wrap with pagination
         clean_query = self._strip_trailing_semicolons(query)
@@ -274,7 +277,7 @@ class SQLService:
             try:
 
                 # Create views for each dataset
-                self._create_views(conn, datasets)
+                self._create_views(conn, _ds_views)
 
                 # Execute the user query
                 result = conn.execute(wrapped_query)

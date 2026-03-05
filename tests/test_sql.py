@@ -191,3 +191,44 @@ def test_sql_integration(tmp_path):
     finally:
         # Restore
         sql.processing.get_dataset = original_get
+
+
+def test_no_replacement_scan_leak(tmp_path):
+    """Querying non-existent table 'datasets' must NOT trigger DuckDB replacement scan
+    against the Python local variable (regression test for the replacement-scan bug)."""
+    import csv as csv_mod
+
+    csv_file = tmp_path / "rs_test.csv"
+    with open(csv_file, 'w', newline='') as f:
+        writer = csv_mod.writer(f)
+        writer.writerow(['id', 'val'])
+        writer.writerow([1, 'a'])
+
+    duckdb_service = get_duckdb_service()
+    parquet_path = tmp_path / "rs_test.parquet"
+    duckdb_service.connection.execute(
+        f"COPY (SELECT * FROM read_csv_auto('{csv_file}')) TO '{parquet_path}' (FORMAT PARQUET)"
+    )
+
+    sql = SQLService()
+
+    class MockRecord:
+        id = "rs_test_1"
+        status = ProcessingStatus.READY
+        processed_path = parquet_path
+        original_filename = "rs_test.csv"
+        metadata = {"columns": [{"name": "id"}, {"name": "val"}]}
+
+    original_get = sql.processing.get_dataset
+    sql.processing.get_dataset = lambda x: MockRecord() if x == "rs_test_1" else None
+
+    try:
+        with pytest.raises(ValueError, match="Query execution failed"):
+            # Query references 'datasets' — should get a clean "table not found"
+            # error, NOT a replacement-scan "Python Object" error.
+            sql.execute_query(
+                query="SELECT * FROM datasets",
+                dataset_id="rs_test_1",
+            )
+    finally:
+        sql.processing.get_dataset = original_get
