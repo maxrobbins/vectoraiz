@@ -107,9 +107,10 @@ function useProcessingTracker(datasetId: string | null, onReady: () => void, onE
 }
 
 /** Individual file row that self-tracks processing */
-function FileRow({ item, onRemove, onStatusChange, onMetadataUpdate }: {
+function FileRow({ item, onRemove, onCancel, onStatusChange, onMetadataUpdate }: {
   item: QueuedFile;
   onRemove: (id: string) => void;
+  onCancel: (id: string) => void;
   onStatusChange: (id: string, state: FileState, error?: string) => void;
   onMetadataUpdate: (id: string, phase: string | null, queuePosition: number | null) => void;
 }) {
@@ -178,8 +179,13 @@ function FileRow({ item, onRemove, onStatusChange, onMetadataUpdate }: {
       )}
 
       {(item.state === "uploading" || item.state === "processing") && (
-        <div className="w-16">
-          <Progress value={item.state === "processing" ? proc.progressPct : item.progress} className="h-1" />
+        <div className="flex items-center gap-2">
+          <div className="w-12">
+            <Progress value={item.state === "processing" ? proc.progressPct : item.progress} className="h-1" />
+          </div>
+          <button onClick={() => onCancel(item.id)} className="p-1 text-muted-foreground hover:text-destructive rounded transition-colors" title="Cancel">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
     </div>
@@ -191,6 +197,7 @@ const FileUploadModal = () => {
     queue,
     addFiles,
     removeFile,
+    cancelFile,
     handleStatusChange,
     handleMetadataUpdate,
     isUploading,
@@ -407,6 +414,7 @@ const FileUploadModal = () => {
                   key={item.id}
                   item={item}
                   onRemove={removeFile}
+                  onCancel={cancelFile}
                   onStatusChange={handleStatusChange}
                   onMetadataUpdate={handleMetadataUpdate}
                 />
@@ -465,10 +473,16 @@ const FileUploadModal = () => {
                     {queue.filter((f) => f.state === "complete").length} succeeded
                   </span>
                 )}
-                {queue.filter((f) => f.state === "error").length > 0 && (
+                {queue.filter((f) => f.state === "error" && f.error !== "Cancelled").length > 0 && (
                   <span className="flex items-center gap-1">
                     <XCircle className="w-3 h-3 text-destructive" />
-                    {queue.filter((f) => f.state === "error").length} failed
+                    {queue.filter((f) => f.state === "error" && f.error !== "Cancelled").length} failed
+                  </span>
+                )}
+                {queue.filter((f) => f.state === "error" && f.error === "Cancelled").length > 0 && (
+                  <span className="flex items-center gap-1">
+                    <X className="w-3 h-3 text-muted-foreground" />
+                    {queue.filter((f) => f.state === "error" && f.error === "Cancelled").length} cancelled
                   </span>
                 )}
                 {queue.filter((f) => f.state === "rejected").length > 0 && (

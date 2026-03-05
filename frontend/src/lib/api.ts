@@ -328,6 +328,13 @@ export class DuplicateFileError extends Error {
   }
 }
 
+export class UploadAbortedError extends Error {
+  constructor() {
+    super('Upload cancelled');
+    this.name = 'UploadAbortedError';
+  }
+}
+
 export const datasetsApi = {
   list: () => apiFetch<DatasetListResponse>('/api/datasets/'),
 
@@ -372,27 +379,29 @@ export const datasetsApi = {
   uploadWithProgress: (
     file: File,
     options?: { allowDuplicate?: boolean; batchId?: string; onProgress?: (percent: number) => void }
-  ): Promise<UploadResponse> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      const qp = new URLSearchParams();
-      if (options?.allowDuplicate) qp.set('allow_duplicate', 'true');
-      if (options?.batchId) qp.set('batch_id', options.batchId);
-      const qs = qp.toString();
-      xhr.open('POST', `${getApiUrl()}/api/datasets/upload${qs ? `?${qs}` : ''}`);
+  ): { promise: Promise<UploadResponse>; abort: () => void } => {
+    const xhr = new XMLHttpRequest();
+    const qp = new URLSearchParams();
+    if (options?.allowDuplicate) qp.set('allow_duplicate', 'true');
+    if (options?.batchId) qp.set('batch_id', options.batchId);
+    const qs = qp.toString();
+    xhr.open('POST', `${getApiUrl()}/api/datasets/upload${qs ? `?${qs}` : ''}`);
 
-      const apiKey = getStoredApiKey();
-      if (apiKey) {
-        xhr.setRequestHeader('X-API-Key', apiKey);
+    const apiKey = getStoredApiKey();
+    if (apiKey) {
+      xhr.setRequestHeader('X-API-Key', apiKey);
+    }
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && options?.onProgress) {
+        // Cap at 95% — the last 5% is server-side processing
+        const pct = Math.min(Math.round((e.loaded / e.total) * 100), 95);
+        options.onProgress(pct);
       }
+    };
 
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable && options?.onProgress) {
-          // Cap at 95% — the last 5% is server-side processing
-          const pct = Math.min(Math.round((e.loaded / e.total) * 100), 95);
-          options.onProgress(pct);
-        }
-      };
+    const promise = new Promise<UploadResponse>((resolve, reject) => {
+      xhr.onabort = () => reject(new UploadAbortedError());
 
       xhr.onload = () => {
         if (xhr.status === 401) {
@@ -419,11 +428,13 @@ export const datasetsApi = {
 
       xhr.onerror = () => reject(new Error('Network error'));
       xhr.ontimeout = () => reject(new Error('Upload timed out'));
-
-      const formData = new FormData();
-      formData.append('file', file);
-      xhr.send(formData);
     });
+
+    const formData = new FormData();
+    formData.append('file', file);
+    xhr.send(formData);
+
+    return { promise, abort: () => xhr.abort() };
   },
 
   delete: (id: string) => apiFetch<{ message: string }>(`/api/datasets/${id}`, { method: 'DELETE' }),

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
-import { datasetsApi, DuplicateFileError, importApi } from "@/lib/api";
+import { datasetsApi, DuplicateFileError, UploadAbortedError, importApi } from "@/lib/api";
 import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
@@ -33,6 +33,7 @@ interface UploadContextValue {
   addFiles: (files: File[], relativePaths?: (string | undefined)[]) => void;
   removeFile: (id: string) => void;
   updateFile: (id: string, updates: Partial<QueuedFile>) => void;
+  cancelFile: (id: string) => void;
   handleStatusChange: (id: string, state: FileState, error?: string) => void;
   handleMetadataUpdate: (id: string, phase: string | null, queuePosition: number | null) => void;
 
@@ -94,6 +95,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   // ----- queue -----
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const abortHandles = useRef<Map<string, () => void>>(new Map());
 
   // ----- modal -----
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -178,6 +180,28 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     ));
   }, []);
 
+  const cancelFile = useCallback((id: string) => {
+    setQueue((prev) => {
+      const item = prev.find((f) => f.id === id);
+      if (!item) return prev;
+
+      if (item.state === "uploading") {
+        const abort = abortHandles.current.get(id);
+        if (abort) abort();
+        abortHandles.current.delete(id);
+        return prev.map((f) => f.id === id ? { ...f, state: "error" as FileState, error: "Cancelled" } : f);
+      }
+
+      if (item.state === "processing" && item.datasetId) {
+        // Fire-and-forget backend cancel
+        datasetsApi.delete(item.datasetId).catch(() => {});
+        return prev.map((f) => f.id === id ? { ...f, state: "error" as FileState, error: "Cancelled" } : f);
+      }
+
+      return prev;
+    });
+  }, []);
+
   // ----- batch -----
   const batchIdRef = useRef<string | null>(null);
 
@@ -210,14 +234,22 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const uploadOne = async (item: QueuedFile, allowDuplicate: boolean) => {
     updateFile(item.id, { state: "uploading", progress: 0 });
     try {
-      const result = await datasetsApi.uploadWithProgress(item.file, {
+      const { promise, abort } = datasetsApi.uploadWithProgress(item.file, {
         allowDuplicate,
         batchId: batchIdRef.current ?? undefined,
         onProgress: (pct) => updateFile(item.id, { progress: pct }),
       });
+      abortHandles.current.set(item.id, abort);
+      const result = await promise;
+      abortHandles.current.delete(item.id);
       updateFile(item.id, { state: "processing", progress: 100, datasetId: result.dataset_id });
       return "ok";
     } catch (e) {
+      abortHandles.current.delete(item.id);
+      if (e instanceof UploadAbortedError) {
+        // cancelFile already set the state — just return
+        return "cancelled";
+      }
       if (e instanceof DuplicateFileError) {
         updateFile(item.id, { state: "duplicate", progress: 0, existingDatasetId: e.existingDataset.id, error: null });
         return "duplicate";
@@ -271,7 +303,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     if (!allDone || queue.length === 0) return;
 
     const ok = queue.filter((f) => f.state === "complete").length;
-    const fail = queue.filter((f) => f.state === "error").length;
+    const cancelled = queue.filter((f) => f.state === "error" && f.error === "Cancelled").length;
+    const fail = queue.filter((f) => f.state === "error" && f.error !== "Cancelled").length;
     const skipped = queue.filter((f) => f.state === "rejected").length;
 
     sendBatchSummary(queue);
@@ -279,6 +312,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     const parts: string[] = [];
     if (ok > 0) parts.push(`${ok} succeeded`);
     if (fail > 0) parts.push(`${fail} failed`);
+    if (cancelled > 0) parts.push(`${cancelled} cancelled`);
     if (skipped > 0) parts.push(`${skipped} skipped`);
 
     if (fail > 0 || skipped > 0) {
@@ -339,6 +373,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     addFiles,
     removeFile,
     updateFile,
+    cancelFile,
     handleStatusChange,
     handleMetadataUpdate,
     isUploading,
