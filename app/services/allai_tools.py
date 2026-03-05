@@ -77,7 +77,10 @@ ALLAI_TOOLS = [
             "Execute a READ-ONLY SQL query via DuckDB. "
             "Tables are named dataset_{dataset_id}. "
             "Results are shown as an inline table — do NOT repeat raw data as text. "
-            "Only SELECT queries are allowed."
+            "Only SELECT queries are allowed. "
+            "IMPORTANT: Always call this tool to run queries. Never write SQL as a "
+            "code block in your response — call this tool and the results will "
+            "display automatically in a formatted table."
         ),
         "input_schema": {
             "type": "object",
