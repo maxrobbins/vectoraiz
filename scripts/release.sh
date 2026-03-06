@@ -5,13 +5,12 @@
 # Single source of truth: git tags. Image built by GitHub Actions on tag push.
 #
 # Usage:
-#   ./scripts/release.sh patch          # Direct stable release (1.20.26 → 1.20.27)
-#   ./scripts/release.sh minor          # Direct stable release (1.20.26 → 1.21.0)
-#   ./scripts/release.sh major          # Direct stable release (1.20.26 → 2.0.0)
-#   ./scripts/release.sh 1.21.0         # Direct stable release (explicit version)
-#   ./scripts/release.sh rc             # Release candidate (→ v1.20.27-rc.1, -rc.2, …)
-#   ./scripts/release.sh promote        # Promote latest RC to stable
-#   ./scripts/release.sh promote v1.20.27-rc.3  # Promote specific RC
+#   ./scripts/release.sh patch          # RC from patch bump (1.20.26 → 1.20.27-rc.1)
+#   ./scripts/release.sh minor          # RC from minor bump (1.20.26 → 1.21.0-rc.1)
+#   ./scripts/release.sh major          # RC from major bump (1.20.26 → 2.0.0-rc.1)
+#   ./scripts/release.sh rc             # RC from patch bump (same as 'patch')
+#   ./scripts/release.sh promote        # Promote latest RC to stable (requires approval)
+#   ./scripts/release.sh promote v1.20.27-rc.3  # Promote specific RC to stable
 #
 # See docs/RELEASING.md for full documentation and recovery procedures.
 # =============================================================================
@@ -425,6 +424,8 @@ stable_flow() {
 # FLOW: Release Candidate
 # =============================================================================
 rc_flow() {
+  local bump="${1:-patch}"
+
   header "RC version resolution"
 
   local current
@@ -433,7 +434,13 @@ rc_flow() {
 
   local major minor patch
   IFS='.' read -r major minor patch <<< "$current"
-  local next_version="$major.$minor.$((patch + 1))"
+
+  local next_version
+  case "$bump" in
+    patch) next_version="$major.$minor.$((patch + 1))" ;;
+    minor) next_version="$major.$((minor + 1)).0" ;;
+    major) next_version="$((major + 1)).0.0" ;;
+  esac
 
   # Find highest existing RC for this version
   local highest_rc=0
@@ -591,16 +598,15 @@ main() {
       ;;
     patch|minor|major)
       preflight
-      stable_flow "$cmd"
+      rc_flow "$cmd"
       ;;
     "")
-      die "Usage: release.sh <rc|promote|patch|minor|major|X.Y.Z>" \
-          "See docs/RELEASING.md for details."
+      die "Usage: release.sh <rc|promote|patch|minor|major>" \
+          "All builds create RCs. Use 'promote' to release stable. See docs/RELEASING.md."
       ;;
     *)
-      # Explicit version number
-      preflight
-      stable_flow "$cmd"
+      die "Usage: release.sh <rc|promote|patch|minor|major>" \
+          "All builds create RCs. Use 'promote' to release stable."
       ;;
   esac
 }
