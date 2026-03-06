@@ -109,7 +109,7 @@ const Datasets = () => {
   const { isPublished, getPublishedData } = useMarketplace();
   const { hasFeature } = useMode();
   const showMarketplace = hasFeature("marketplace");
-  const { openModal, setOnSuccess } = useUpload();
+  const { openModal, setOnSuccess, queue } = useUpload();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<SortField>("date");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -137,6 +137,24 @@ const Datasets = () => {
       refetch();
     });
   }, [setOnSuccess, refetch]);
+
+  // Refetch dataset list whenever an upload enters "processing" (file accepted by backend)
+  const uploadProcessingCount = queue.filter((f) => f.state === "processing").length;
+  const prevProcessingCount = React.useRef(0);
+  useEffect(() => {
+    if (uploadProcessingCount > prevProcessingCount.current) {
+      refetch();
+    }
+    prevProcessingCount.current = uploadProcessingCount;
+  }, [uploadProcessingCount, refetch]);
+
+  // Poll dataset list while any dataset has "processing" status
+  const hasProcessingDatasets = datasets.some((d) => d.status === "processing");
+  useEffect(() => {
+    if (!hasProcessingDatasets) return;
+    const interval = setInterval(() => refetch(), 5000);
+    return () => clearInterval(interval);
+  }, [hasProcessingDatasets, refetch]);
 
   const handleDatasetClick = (dataset: Dataset) => {
     navigate(`/datasets/${dataset.id}`);
