@@ -43,6 +43,8 @@ AUTO_APPROVE_TOOLS = {
     "submit_feedback",
     "create_notification",
     "prepare_support_bundle",
+    "create_artifact",
+    "create_artifact_from_query",
 }
 
 MUTATION_TOOLS: Dict[str, Dict[str, str]] = {
@@ -94,6 +96,9 @@ TOOL_CAPABILITIES: Dict[str, set] = {
     "submit_feedback": {"feedback:write"},
     "create_notification": {"system:write"},
     "prepare_support_bundle": {"system:read"},
+    # AUTO_APPROVE — Artifacts
+    "create_artifact": {"data:read"},
+    "create_artifact_from_query": {"data:read"},
     # MUTATION
     "delete_dataset": {"data:delete"},
     "connectivity_enable": {"connectivity:write"},

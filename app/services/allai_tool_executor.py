@@ -372,6 +372,9 @@ class AllAIToolExecutor:
             # BQ-VZ-NOTIFICATIONS: Notification tools
             "get_notifications": self._handle_get_notifications,
             "create_notification": self._handle_create_notification,
+            # BQ-VZ-ARTIFACTS: Artifact creation tools
+            "create_artifact": self._handle_create_artifact,
+            "create_artifact_from_query": self._handle_create_artifact_from_query,
         }
 
         handler = handlers.get(tool_name)
@@ -1466,6 +1469,105 @@ class AllAIToolExecutor:
         return ToolResult(
             frontend_data={"success": True, "notification_id": n.id},
             llm_summary=f"Notification created: [{n.type}] {n.title}",
+        )
+
+    # ------------------------------------------------------------------
+    # BQ-VZ-ARTIFACTS: Artifact creation handlers
+    # ------------------------------------------------------------------
+
+    async def _handle_create_artifact(self, tool_input: dict) -> ToolResult:
+        """Create an artifact from LLM-curated content."""
+        from app.services.artifacts_service import get_artifacts_service
+
+        svc = get_artifacts_service()
+        try:
+            artifact = svc.create_artifact(
+                filename=tool_input["filename"],
+                content=tool_input["content"],
+                format=tool_input["format"],
+                description=tool_input.get("description"),
+                dataset_refs=tool_input.get("dataset_refs"),
+                user_id=self.user.user_id or "local",
+                source="allai-copilot",
+                source_ref=self.session_id,
+            )
+        except ValueError as e:
+            return ToolResult(
+                frontend_data={"error": str(e)},
+                llm_summary=f"Artifact creation failed: {str(e)}",
+            )
+        except PermissionError as e:
+            return ToolResult(
+                frontend_data={"error": str(e)},
+                llm_summary=f"Artifact creation denied: {str(e)}",
+            )
+
+        def _fmt_size(b: int) -> str:
+            if b < 1024:
+                return f"{b} B"
+            if b < 1024 * 1024:
+                return f"{b / 1024:.1f} KB"
+            return f"{b / (1024 * 1024):.1f} MB"
+
+        return ToolResult(
+            frontend_data={
+                "artifact_id": artifact.id,
+                "filename": artifact.filename,
+                "format": artifact.format,
+                "size_bytes": artifact.size_bytes,
+                "description": artifact.description,
+                "tool_type": "create_artifact",
+            },
+            llm_summary=(
+                f"Created artifact '{artifact.filename}' ({_fmt_size(artifact.size_bytes)}, {artifact.format.upper()}). "
+                f"The user can find it in their Artifacts section."
+            ),
+        )
+
+    async def _handle_create_artifact_from_query(self, tool_input: dict) -> ToolResult:
+        """Create a CSV artifact from a SQL query."""
+        from app.services.artifacts_service import get_artifacts_service
+
+        svc = get_artifacts_service()
+        try:
+            artifact = svc.create_artifact_from_query(
+                filename=tool_input["filename"],
+                query=tool_input["query"],
+                description=tool_input.get("description"),
+                user_id=self.user.user_id or "local",
+                source_ref=self.session_id,
+            )
+        except ValueError as e:
+            return ToolResult(
+                frontend_data={"error": str(e)},
+                llm_summary=f"Artifact creation from query failed: {str(e)}",
+            )
+        except PermissionError as e:
+            return ToolResult(
+                frontend_data={"error": str(e)},
+                llm_summary=f"Artifact creation denied: {str(e)}",
+            )
+
+        def _fmt_size(b: int) -> str:
+            if b < 1024:
+                return f"{b} B"
+            if b < 1024 * 1024:
+                return f"{b / 1024:.1f} KB"
+            return f"{b / (1024 * 1024):.1f} MB"
+
+        return ToolResult(
+            frontend_data={
+                "artifact_id": artifact.id,
+                "filename": artifact.filename,
+                "format": artifact.format,
+                "size_bytes": artifact.size_bytes,
+                "description": artifact.description,
+                "tool_type": "create_artifact",
+            },
+            llm_summary=(
+                f"Created CSV artifact '{artifact.filename}' ({_fmt_size(artifact.size_bytes)}) from SQL query. "
+                f"The user can find it in their Artifacts section."
+            ),
         )
 
     @staticmethod

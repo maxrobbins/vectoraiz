@@ -234,6 +234,7 @@ class TestToolClassification:
         expected = {
             "log_feedback", "submit_feedback",
             "create_notification", "prepare_support_bundle",
+            "create_artifact", "create_artifact_from_query",
         }
         assert AUTO_APPROVE_TOOLS == expected
 

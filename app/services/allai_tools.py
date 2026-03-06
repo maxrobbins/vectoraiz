@@ -492,6 +492,76 @@ ALLAI_TOOLS = [
     # ------------------------------------------------------------------
     # BQ-VZ-NOTIFICATIONS Phase 4: Diagnostic transmission
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # BQ-VZ-ARTIFACTS: Artifact creation tools
+    # ------------------------------------------------------------------
+    {
+        "name": "create_artifact",
+        "description": (
+            "Create an output file (artifact) from analysis results, data extracts, "
+            "query results, or generated reports. The file is saved to the user's "
+            "Artifacts section where they can view, download, or share it. "
+            "Use when the user asks to: export data, create a file, save results, "
+            "generate a report, extract and save, or write output. "
+            "For large data exports (more than ~100 rows), prefer create_artifact_from_query."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "Display filename with extension (e.g. 'russia-references.txt', 'q4-summary.csv')",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The file content to write. For CSV: include header row. For JSON: valid JSON string. For HTML: complete HTML.",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["txt", "csv", "json", "md", "html"],
+                    "description": "File format. Must match filename extension.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Brief description of what this artifact contains and how it was generated.",
+                },
+                "dataset_refs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Dataset IDs that were used to generate this artifact (for provenance tracking).",
+                },
+            },
+            "required": ["filename", "content", "format", "description"],
+        },
+    },
+    {
+        "name": "create_artifact_from_query",
+        "description": (
+            "Create a CSV artifact by running a SQL query and saving the results directly to a file. "
+            "Use this for large data exports that would exceed chat display limits — e.g. "
+            "'export all transactions from Q4', 'save all rows where price > 500'. "
+            "Results are streamed directly to file, bypassing output size limits. "
+            "Only SELECT queries are allowed. Tables are named dataset_{dataset_id}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "Display filename (e.g. 'q4-transactions.csv')",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "SQL SELECT query. Tables: dataset_{dataset_id}",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Brief description of what this export contains.",
+                },
+            },
+            "required": ["filename", "query", "description"],
+        },
+    },
     {
         "name": "prepare_support_bundle",
         "description": (

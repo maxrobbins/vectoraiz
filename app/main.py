@@ -304,6 +304,23 @@ async def lifespan(app: FastAPI):
         _safe_background_task("attachment_cleanup", _attachment_cleanup_loop())
     )
 
+    # BQ-VZ-ARTIFACTS: Artifact cleanup (every 1 hour)
+    async def _artifact_cleanup_loop():
+        from app.services.artifacts_service import get_artifacts_service
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                svc = get_artifacts_service()
+                removed = svc.cleanup_expired()
+                if removed:
+                    logger.info("Artifact cleanup: removed %d expired artifacts", removed)
+            except Exception:
+                logger.exception("Artifact cleanup error")
+
+    artifact_cleanup_task = asyncio.create_task(
+        _safe_background_task("artifact_cleanup", _artifact_cleanup_loop())
+    )
+
     # BQ-VZ-AUTO-UPDATE: Background update check (startup + every 6h)
     from app.services.update_service import background_update_check_loop
     update_check_task = asyncio.create_task(
@@ -700,6 +717,15 @@ def create_app() -> FastAPI:
         notifications_router,
         prefix="/api/notifications",
         tags=["notifications"],
+        dependencies=any_user_dependency,
+    )
+
+    # ADMIN + USER — artifacts (allAI output files)
+    from app.routers.artifacts import router as artifacts_router
+    app.include_router(
+        artifacts_router,
+        prefix="/api/artifacts",
+        tags=["artifacts"],
         dependencies=any_user_dependency,
     )
 

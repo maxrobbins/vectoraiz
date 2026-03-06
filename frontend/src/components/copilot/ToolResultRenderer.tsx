@@ -44,6 +44,9 @@ export default memo(function ToolResultRenderer({ toolName, data }: ToolResultRe
       return <SearchResults data={data} />;
     case "get_system_status":
       return <SystemStatus data={data} />;
+    case "create_artifact":
+    case "create_artifact_from_query":
+      return <ArtifactCard data={data} />;
     default:
       return (
         <div className="my-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/60">
@@ -203,6 +206,68 @@ function SearchResults({ data }: { data: ToolResultData }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+function ArtifactCard({ data }: { data: ToolResultData }) {
+  const filename = data.filename as string | undefined;
+  const format = data.format as string | undefined;
+  const sizeBytes = data.size_bytes as number | undefined;
+  const description = data.description as string | undefined;
+  const artifactId = data.artifact_id as string | undefined;
+
+  const fmtSize = (b: number) => {
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+    return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleDownload = () => {
+    if (!artifactId) return;
+    const apiUrl = typeof window !== "undefined" ? localStorage.getItem("vectoraiz_api_url") || "" : "";
+    const url = `${apiUrl}/api/artifacts/${artifactId}/download`;
+    const apiKey = localStorage.getItem("vectoraiz_api_key");
+    fetch(url, { headers: apiKey ? { "X-API-Key": apiKey } : {} })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename || "download";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+      });
+  };
+
+  return (
+    <div className="my-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="text-base">&#128196;</span>
+        <span className="font-medium text-white/80">{filename || "artifact"}</span>
+      </div>
+      {description && (
+        <div className="mt-1 text-white/50 text-[11px]">{description}</div>
+      )}
+      <div className="mt-1.5 flex items-center gap-3 text-[10px] text-white/40">
+        {sizeBytes != null && <span>{fmtSize(sizeBytes)}</span>}
+        {format && <span className="uppercase">{format}</span>}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          onClick={handleDownload}
+          className="px-2.5 py-1 rounded bg-primary/20 text-primary text-[11px] font-medium hover:bg-primary/30 transition-colors"
+        >
+          Download
+        </button>
+        <a
+          href="/artifacts"
+          className="px-2.5 py-1 rounded bg-white/5 text-white/50 text-[11px] font-medium hover:bg-white/10 transition-colors"
+        >
+          View in Artifacts
+        </a>
+      </div>
     </div>
   );
 }

@@ -727,6 +727,54 @@ export const authApi = {
     }),
 };
 
+// BQ-VZ-ARTIFACTS: Artifact types
+export interface ApiArtifact {
+  id: string;
+  schema_version: number;
+  filename: string;
+  format: 'txt' | 'csv' | 'json' | 'md' | 'html';
+  size_bytes: number;
+  content_hash: string;
+  created_at: string;
+  source: string;
+  source_ref: string | null;
+  description: string | null;
+  dataset_refs: string[];
+  user_id: string;
+  starred: boolean;
+  expired: boolean;
+}
+
+export interface ArtifactListResponse {
+  artifacts: ApiArtifact[];
+  total: number;
+}
+
+// Artifacts API
+export const artifactsApi = {
+  list: (params?: { offset?: number; limit?: number; format_filter?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.offset) searchParams.append('offset', params.offset.toString());
+    if (params?.limit) searchParams.append('limit', params.limit.toString());
+    if (params?.format_filter) searchParams.append('format_filter', params.format_filter);
+    const qs = searchParams.toString();
+    return apiFetch<ArtifactListResponse>(`/api/artifacts${qs ? `?${qs}` : ''}`);
+  },
+
+  get: (id: string) => apiFetch<ApiArtifact>(`/api/artifacts/${id}`),
+
+  delete: (id: string) =>
+    apiFetch<{ status: string }>(`/api/artifacts/${id}`, { method: 'DELETE' }),
+
+  star: (id: string, starred: boolean) =>
+    apiFetch<ApiArtifact>(`/api/artifacts/${id}/star`, {
+      method: 'PATCH',
+      body: JSON.stringify({ starred }),
+    }),
+
+  downloadUrl: (id: string) => `${getApiUrl()}/api/artifacts/${id}/download`,
+};
+
 // BQ-VZ-LOCAL-IMPORT: Local Import types
 export interface ImportBrowseEntry {
   name: string;

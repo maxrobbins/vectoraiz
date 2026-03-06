@@ -11,6 +11,7 @@ import {
   Monitor,
   Globe,
   FileStack,
+  FileOutput,
   Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,7 @@ const topNavItems: NavItem[] = [
   { path: "/datasets", label: "Datasets", icon: Database },
   { path: "/search", label: "Search", icon: Search },
   { path: "/sql", label: "SQL Query", icon: Code },
+  { path: "/artifacts", label: "Artifacts", icon: FileOutput },
   { path: "/databases", label: "Databases", icon: Database },
   { path: "/settings", label: "Settings", icon: Settings },
 ];

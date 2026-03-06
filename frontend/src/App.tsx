@@ -18,6 +18,7 @@ import DatasetDetail from "./pages/DatasetDetail";
 import EarningsPage from "./pages/EarningsPage";
 import SearchPage from "./pages/SearchPage";
 import SqlQuery from "./pages/SqlQuery";
+import ArtifactsPage from "./pages/ArtifactsPage";
 import DatabasePage from "./pages/DatabasePage";
 import SettingsPage from "./pages/SettingsPage";
 import DataTypesPage from "./pages/DataTypesPage";
@@ -93,6 +94,7 @@ const App = () => (
                     <Route path="/earnings" element={<EarningsPage />} />
                     <Route path="/search" element={<SearchPage />} />
                     <Route path="/sql" element={<SqlQuery />} />
+                    <Route path="/artifacts" element={<ArtifactsPage />} />
                     <Route path="/databases" element={<DatabasePage />} />
                     <Route path="/settings" element={<SettingsPage />} />
                     <Route path="/data-types" element={<DataTypesPage />} />
