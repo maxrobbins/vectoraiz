@@ -81,9 +81,7 @@ const SetupPage = () => {
   if (checking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center animate-pulse">
-          <span className="text-primary-foreground font-bold text-lg">V</span>
-        </div>
+        <img src="/vectoraiz-logo-sm.png" alt="vectorAIz" className="w-10 h-10 rounded-xl animate-pulse" />
       </div>
     );
   }
@@ -93,9 +91,7 @@ const SetupPage = () => {
       <div className="w-full max-w-md space-y-8">
         {/* Logo + heading */}
         <div className="flex flex-col items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-2xl">V</span>
-          </div>
+          <img src="/vectoraiz-logo-sm.png" alt="vectorAIz" className="w-14 h-14 rounded-2xl" />
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-bold text-foreground">Welcome to vectorAIz</h1>
             <p className="text-muted-foreground">Create your admin account to get started</p>

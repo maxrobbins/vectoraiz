@@ -42,9 +42,7 @@ const LoginPage = () => {
       <div className="w-full max-w-md space-y-8">
         {/* Logo + heading */}
         <div className="flex flex-col items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-2xl">V</span>
-          </div>
+          <img src="/vectoraiz-logo-sm.png" alt="vectorAIz" className="w-14 h-14 rounded-2xl" />
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-bold text-foreground">Sign in to vectorAIz</h1>
             <p className="text-muted-foreground">Enter your credentials to continue</p>
