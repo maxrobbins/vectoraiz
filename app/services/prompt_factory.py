@@ -396,6 +396,19 @@ If the user reports a problem, has a suggestion, or asks for help — use the su
 {selection_str}
 ```""")
 
+        # Screen-specific context hints
+        if context.screen.startswith("data_request_"):
+            parts.append("""
+**Screen Context — Data Request Feature:**
+The Data Request Board is a "wanted" board where BUYERS post requests for data they NEED but that does NOT currently exist on the marketplace. Key facts:
+- Buyers create requests describing data they are looking for; sellers browse open requests and can respond with offers.
+- This is NOT for requesting access to an existing listing — that is handled via the listing detail page and the inquiry/contact flow.
+- "/data-requests" (data_request_board): lists all open buyer requests; users can browse or post their own.
+- "/data-requests/new" (data_request_create): form to create a new data request; submitting creates a draft that can be published after review.
+- "/data-requests/<id>" (data_request_detail): detail view of a single request; sellers can respond here.
+- "/dashboard/requests" (data_request_dashboard): a seller's view of requests they have responded to or are tracking.
+Never tell a user that the Data Request Board is for requesting access to existing datasets — that is incorrect.""")
+
         if context.dataset_list:
             ds_lines = []
             for ds in context.dataset_list:

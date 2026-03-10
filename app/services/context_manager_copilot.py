@@ -173,6 +173,9 @@ class CoPilotContextManager:
             "/dashboard": "dashboard",
             "/earnings": "earnings",
             "/marketplace": "marketplace",
+            "/data-requests": "data_request_board",
+            "/data-requests/new": "data_request_create",
+            "/dashboard/requests": "data_request_dashboard",
         }
 
         # Exact match first
@@ -180,6 +183,9 @@ class CoPilotContextManager:
             return route_map[route_lower]
 
         # Pattern matches
+        if "/data-requests/" in route_lower:
+            return "data_request_detail"
+
         if "/datasets/" in route_lower:
             if "/preview" in route_lower:
                 return "data_preview"
