@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMode } from "@/contexts/ModeContext";
 import {
   fetchDataRequests,
   type DataRequest,
@@ -61,6 +62,7 @@ const CATEGORIES = [
 const DataRequestsPage = () => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const { isLoading: modeLoading, isConnected } = useMode();
   const [requests, setRequests] = useState<DataRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -68,6 +70,7 @@ const DataRequestsPage = () => {
   const [sort, setSort] = useState("newest");
 
   useEffect(() => {
+    if (modeLoading) return;
     const load = async () => {
       setLoading(true);
       setError("");
@@ -83,7 +86,7 @@ const DataRequestsPage = () => {
       }
     };
     load();
-  }, [category, sort]);
+  }, [category, sort, modeLoading, isConnected]);
 
   return (
     <div className="space-y-6">

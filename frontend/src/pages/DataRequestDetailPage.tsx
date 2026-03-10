@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMode } from "@/contexts/ModeContext";
 import {
   fetchDataRequest,
   fetchResponses,
@@ -68,6 +69,7 @@ const DataRequestDetailPage = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const { isLoading: modeLoading, isConnected } = useMode();
 
   const [request, setRequest] = useState<DataRequest | null>(null);
   const [responses, setResponses] = useState<RequestResponse[]>([]);
@@ -84,7 +86,7 @@ const DataRequestDetailPage = () => {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || modeLoading) return;
     const load = async () => {
       setLoading(true);
       setError("");
@@ -106,7 +108,7 @@ const DataRequestDetailPage = () => {
       }
     };
     load();
-  }, [slug, isAuthenticated]);
+  }, [slug, isAuthenticated, modeLoading, isConnected]);
 
   const handlePublish = async () => {
     if (!request) return;

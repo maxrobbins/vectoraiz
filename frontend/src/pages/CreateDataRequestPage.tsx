@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2, X } from "lucide-react";
+import { useMode } from "@/contexts/ModeContext";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,12 +30,20 @@ const CATEGORIES = [
   "Other",
 ];
 
+function autoTitle(desc: string): string {
+  const trimmed = desc.trim();
+  if (trimmed.length <= 60) return trimmed;
+  const cut = trimmed.slice(0, 60);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 0 ? cut.slice(0, lastSpace) : cut) + "...";
+}
+
 const CreateDataRequestPage = () => {
   const navigate = useNavigate();
+  const { isLoading: modeLoading } = useMode();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
   const [categoryInput, setCategoryInput] = useState("");
@@ -60,10 +69,6 @@ const CreateDataRequestPage = () => {
     e.preventDefault();
     setError("");
 
-    if (!title.trim()) {
-      setError("Title is required");
-      return;
-    }
     if (!description.trim()) {
       setError("Description is required");
       return;
@@ -72,7 +77,7 @@ const CreateDataRequestPage = () => {
     setIsSubmitting(true);
     try {
       const result = await createDataRequest({
-        title: title.trim(),
+        title: autoTitle(description),
         description: description.trim(),
         categories,
         format_preferences: formatPreferences.trim() || undefined,
@@ -100,11 +105,16 @@ const CreateDataRequestPage = () => {
         <div>
           <h2 className="text-2xl font-bold text-foreground">Post a Data Request</h2>
           <p className="text-sm text-muted-foreground">
-            Tell sellers exactly what data you need
+            Describe what data you need — sellers will respond with proposals
           </p>
         </div>
       </div>
 
+      {modeLoading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
       <Card className="bg-card border-border">
         <CardContent className="pt-6">
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -113,17 +123,6 @@ const CreateDataRequestPage = () => {
                 {error}
               </div>
             )}
-
-            <div className="space-y-2">
-              <Label htmlFor="title">Title *</Label>
-              <Input
-                id="title"
-                placeholder="e.g. US commercial real estate transactions 2020-2024"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                maxLength={200}
-              />
-            </div>
 
             <div className="space-y-2">
               <Label htmlFor="description">Description *</Label>
@@ -256,6 +255,7 @@ const CreateDataRequestPage = () => {
           </form>
         </CardContent>
       </Card>
+      )}
     </div>
   );
 };

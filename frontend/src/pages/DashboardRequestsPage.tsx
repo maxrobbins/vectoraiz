@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { fetchMyDataRequests, type DataRequest } from "@/lib/data-requests-api";
+import { useMode } from "@/contexts/ModeContext";
 
 const statusColors: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -17,11 +18,13 @@ const statusColors: Record<string, string> = {
 
 const DashboardRequestsPage = () => {
   const navigate = useNavigate();
+  const { isLoading: modeLoading, isConnected } = useMode();
   const [requests, setRequests] = useState<DataRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (modeLoading) return;
     const load = async () => {
       setLoading(true);
       setError("");
@@ -35,7 +38,7 @@ const DashboardRequestsPage = () => {
       }
     };
     load();
-  }, []);
+  }, [modeLoading, isConnected]);
 
   return (
     <div className="space-y-6">
