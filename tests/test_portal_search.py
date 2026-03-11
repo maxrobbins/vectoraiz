@@ -60,7 +60,7 @@ def open_portal_with_datasets():
             ),
             "ds-all-columns": DatasetPortalConfig(
                 portal_visible=True,
-                display_columns=[],  # empty = show all
+                display_columns=[],
                 max_results=100,
             ),
         },
@@ -68,10 +68,6 @@ def open_portal_with_datasets():
     save_portal_config(config)
     return config
 
-
-# ---------------------------------------------------------------------------
-# Column restriction: results only contain display_columns
-# ---------------------------------------------------------------------------
 
 def test_search_results_only_contain_display_columns(client, open_portal_with_datasets):
     """Search results for restricted dataset only include display_columns."""
@@ -93,7 +89,6 @@ def test_search_results_only_contain_display_columns(client, open_portal_with_da
     data = resp.json()
     for result in data["results"]:
         row_keys = set(result["row_data"].keys())
-        # Only display_columns should be present
         assert row_keys <= {"name", "category"}, f"Unexpected columns: {row_keys}"
         assert "secret_field" not in row_keys
         assert "internal_id" not in row_keys
@@ -122,10 +117,6 @@ def test_search_all_columns_when_display_empty(client, open_portal_with_datasets
         assert row_keys == {"col_a", "col_b", "col_c"}
 
 
-# ---------------------------------------------------------------------------
-# max_results enforcement
-# ---------------------------------------------------------------------------
-
 def test_max_results_caps_search_limit(client, open_portal_with_datasets):
     """Dataset max_results=3 caps the limit even if client requests more."""
     with patch("app.services.portal_service.get_search_service") as mock_search, \
@@ -141,17 +132,11 @@ def test_max_results_caps_search_limit(client, open_portal_with_datasets):
         )
 
     assert resp.status_code == 200
-    # Verify the search service was called with the capped limit
-    call_args = mock_search.return_value.search.call_args
-    called_limit = call_args.kwargs.get("limit") if call_args.kwargs else call_args[1].get("limit")
-    # The portal service should have capped limit to max_results=3
+    call_kwargs = mock_search.return_value.search.call_args
+    called_limit = call_kwargs.kwargs.get("limit") if call_kwargs.kwargs else call_kwargs[1].get("limit")
     assert called_limit is not None
     assert called_limit <= 3
 
-
-# ---------------------------------------------------------------------------
-# GET search endpoint
-# ---------------------------------------------------------------------------
 
 def test_get_search_single_dataset(client, open_portal_with_datasets):
     """GET /api/portal/search/{dataset_id}?q=... works."""
@@ -171,10 +156,6 @@ def test_get_search_single_dataset(client, open_portal_with_datasets):
     assert data["query"] == "hello"
     assert len(data["results"]) == 1
 
-
-# ---------------------------------------------------------------------------
-# Non-visible dataset via search returns 403
-# ---------------------------------------------------------------------------
 
 def test_search_non_visible_dataset_returns_403(client, open_portal_with_datasets):
     """Searching a dataset not marked portal_visible returns 403."""
