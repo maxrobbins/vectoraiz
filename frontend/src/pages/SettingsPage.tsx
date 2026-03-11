@@ -27,6 +27,7 @@ import {
   Download,
   Terminal,
   Coins,
+  ChevronDown,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -154,6 +155,7 @@ const SettingsPage = () => {
   const [allaiLoading, setAllaiLoading] = useState(false);
   const [allaiError, setAllaiError] = useState<string | null>(null);
   const [allaiPurchasing, setAllaiPurchasing] = useState(false);
+  const [showUsageHistory, setShowUsageHistory] = useState(false);
 
   const fetchLocalKeys = useCallback(async () => {
     setKeysLoading(true);
@@ -209,8 +211,7 @@ const SettingsPage = () => {
           usage: data.usage ?? [],
         });
       } else if (res.status === 409) {
-        // Serial not active — not an error, just not connected
-        setAllaiCredits(null);
+        setAllaiError('not_connected');
       } else if (res.status === 503) {
         setAllaiError('Connect to ai.market to use allAI credits');
       } else {
@@ -369,9 +370,12 @@ const SettingsPage = () => {
     fetchAllaiCredits();
     const params = new URLSearchParams(window.location.search);
     if (params.get('credits') === 'success') {
-      toast({ title: "Credits purchased!", description: "Your allAI credits have been added." });
+      toast({ title: "Credits added successfully!", description: "Your allAI credits have been added." });
       window.history.replaceState({}, '', '/settings');
       fetchAllaiCredits();
+    } else if (params.get('credits') === 'cancelled') {
+      toast({ title: "Purchase cancelled", description: "No credits were charged." });
+      window.history.replaceState({}, '', '/settings');
     }
   }, [fetchAllaiCredits]);
 
@@ -545,10 +549,12 @@ const SettingsPage = () => {
           ) : allaiError ? (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                {allaiError}
+                {allaiError === 'not_connected' ? (
+                  <>Connect to ai.market to use allAI credits. Check your <a href="#connectivity" className="text-primary underline underline-offset-2 hover:text-primary/80">Connectivity settings</a> below.</>
+                ) : allaiError}
               </p>
               <Button disabled variant="outline" size="sm">
-                Buy $25 Credits
+                Add $25 Credits
               </Button>
             </div>
           ) : !allaiCredits ? (
@@ -557,7 +563,7 @@ const SettingsPage = () => {
                 Connect to ai.market to purchase allAI credits
               </p>
               <Button disabled variant="outline" size="sm">
-                Buy $25 Credits
+                Add $25 Credits
               </Button>
             </div>
           ) : (
@@ -590,50 +596,64 @@ const SettingsPage = () => {
                 ) : (
                   <>
                     <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                    Buy $25 Credits
+                    Add $25 Credits
                   </>
                 )}
               </Button>
 
-              {/* Usage history */}
+              {/* Usage history — collapsible */}
               {allaiCredits.usage.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   No usage yet — allAI credits are consumed when you use AI features
                 </p>
               ) : (
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recent Usage</p>
-                  <div className="divide-y divide-border rounded-md border border-border overflow-hidden">
-                    {allaiCredits.usage.slice(0, 10).map((item, i) => {
-                      const ago = (() => {
-                        const diff = Date.now() - new Date(item.created_at).getTime();
-                        const mins = Math.floor(diff / 60000);
-                        if (mins < 1) return "just now";
-                        if (mins < 60) return `${mins}m ago`;
-                        const hrs = Math.floor(mins / 60);
-                        if (hrs < 24) return `${hrs}h ago`;
-                        const days = Math.floor(hrs / 24);
-                        return `${days}d ago`;
-                      })();
-                      return (
-                        <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-foreground">{item.model}</span>
-                            <span className="text-muted-foreground">
-                              {(() => {
-                                const total = item.input_tokens + item.output_tokens;
-                                return total >= 1000 ? `${(total / 1000).toFixed(1)}k` : String(total);
-                              })()} tokens
-                            </span>
+                  <button
+                    onClick={() => setShowUsageHistory(!showUsageHistory)}
+                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
+                  >
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showUsageHistory ? '' : '-rotate-90'}`} />
+                    Recent Usage ({allaiCredits.usage.length})
+                  </button>
+                  {showUsageHistory && (
+                    <div className="divide-y divide-border rounded-md border border-border overflow-hidden">
+                      {allaiCredits.usage.slice(0, 10).map((item, i) => {
+                        const ago = (() => {
+                          const diff = Date.now() - new Date(item.created_at).getTime();
+                          const mins = Math.floor(diff / 60000);
+                          if (mins < 1) return "just now";
+                          if (mins < 60) return `${mins}m ago`;
+                          const hrs = Math.floor(mins / 60);
+                          if (hrs < 24) return `${hrs}h ago`;
+                          const days = Math.floor(hrs / 24);
+                          return `${days}d ago`;
+                        })();
+                        const shortModel = item.model
+                          .replace(/^claude-/, '')
+                          .replace(/-\d{8}$/, '')
+                          .replace(/(\w+)-(\d+)(?:-(\d+))?/, (_m, name, major, minor) =>
+                            `${name.charAt(0).toUpperCase() + name.slice(1)} ${major}${minor ? `.${minor}` : ''}`
+                          );
+                        return (
+                          <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-foreground">{shortModel}</span>
+                              <span className="text-muted-foreground">
+                                {(() => {
+                                  const total = item.input_tokens + item.output_tokens;
+                                  return total >= 1000 ? `${(total / 1000).toFixed(1)}k` : String(total);
+                                })()} tokens
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-foreground">${item.cost_usd.toFixed(4)}</span>
+                              <span className="text-muted-foreground">{ago}</span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-foreground">${item.cost_usd.toFixed(4)}</span>
-                            <span className="text-muted-foreground">{ago}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1075,7 +1095,9 @@ const SettingsPage = () => {
       </Card>
 
       {/* Section: External Connectivity */}
-      <ConnectivitySettings />
+      <div id="connectivity">
+        <ConnectivitySettings />
+      </div>
 
       {/* Section 4: Developer Mode */}
       <Card className="bg-card border-border">
