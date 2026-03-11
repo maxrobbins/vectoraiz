@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  Key,
   HardDrive,
   Code,
-  Info,
   Eye,
   EyeOff,
   FolderOpen,
@@ -77,9 +75,10 @@ import ConnectivitySettings from "@/components/ConnectivitySettings";
 // Empty string = same-origin (relative URLs). Works on Railway, Docker, etc.
 const DEFAULT_API_URL = '';
 
-type ConnectionStatus = "not-configured" | "valid" | "invalid" | "testing";
-
 const SettingsPage = () => {
+  // Dirty state tracking for Save button
+  const [isDirty, setIsDirty] = useState(false);
+
   // Backend URL state — empty string means "same origin" (relative URLs)
   const [apiUrl, setApiUrl] = useState(() =>
     localStorage.getItem('vectoraiz_api_url') ?? DEFAULT_API_URL
@@ -87,11 +86,6 @@ const SettingsPage = () => {
   const [backendTestStatus, setBackendTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [backendErrorMessage, setBackendErrorMessage] = useState('');
 
-  // API Keys state
-  const [unstructuredKey, setUnstructuredKey] = useState("");
-  const [showUnstructuredKey, setShowUnstructuredKey] = useState(false);
-  const [unstructuredStatus, setUnstructuredStatus] = useState<ConnectionStatus>("not-configured");
-  
   // Processing state
   const [memoryLimit, setMemoryLimit] = useState([12]);
   const [concurrentUploads, setConcurrentUploads] = useState(() =>
@@ -465,47 +459,8 @@ const SettingsPage = () => {
     });
   };
 
-  const testUnstructuredConnection = () => {
-    setUnstructuredStatus("testing");
-    setTimeout(() => {
-      setUnstructuredStatus(unstructuredKey.length > 10 ? "valid" : "invalid");
-    }, 1500);
-  };
-
-  const getStatusBadge = (status: ConnectionStatus) => {
-    switch (status) {
-      case "not-configured":
-        return (
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="w-2 h-2 rounded-full bg-muted-foreground" />
-            Not configured
-          </span>
-        );
-      case "valid":
-        return (
-          <span className="flex items-center gap-1.5 text-xs text-[hsl(var(--haven-success))]">
-            <CheckCircle className="w-3.5 h-3.5" />
-            Valid
-          </span>
-        );
-      case "invalid":
-        return (
-          <span className="flex items-center gap-1.5 text-xs text-destructive">
-            <XCircle className="w-3.5 h-3.5" />
-            Invalid
-          </span>
-        );
-      case "testing":
-        return (
-          <span className="flex items-center gap-1.5 text-xs text-primary">
-            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            Testing...
-          </span>
-        );
-    }
-  };
-
   const handleSaveSettings = () => {
+    setIsDirty(false);
     toast({
       title: "Settings saved successfully",
       description: "Your configuration has been updated.",
@@ -686,6 +641,7 @@ const SettingsPage = () => {
                 onChange={(e) => {
                   setApiUrl(e.target.value);
                   setBackendTestStatus('idle');
+                  setIsDirty(true);
                 }}
                 className="flex-1 bg-background border-border text-foreground font-mono"
               />
@@ -870,96 +826,6 @@ const SettingsPage = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Section 1: External Service API Keys */}
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-              <Key className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-foreground">Service Configuration</CardTitle>
-              <CardDescription>Connect optional services to enhance your vectorAIz experience</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Unstructured API Key */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="unstructured" className="text-foreground font-medium">
-                  Document Parser (Unstructured)
-                </Label>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="w-4 h-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs">
-                      <p>Unstructured.io provides enhanced parsing for complex PDFs, scanned documents, and images. Without this key, vectorAIz uses its built-in parser which works well for most documents.</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-              {getStatusBadge(unstructuredStatus)}
-            </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  id="unstructured"
-                  type={showUnstructuredKey ? "text" : "password"}
-                  placeholder="Enter your Unstructured API key"
-                  value={unstructuredKey}
-                  onChange={(e) => {
-                    setUnstructuredKey(e.target.value);
-                    setUnstructuredStatus(e.target.value ? "not-configured" : "not-configured");
-                  }}
-                  className="bg-background border-border text-foreground pr-10"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                  onClick={() => setShowUnstructuredKey(!showUnstructuredKey)}
-                >
-                  {showUnstructuredKey ? (
-                    <EyeOff className="w-4 h-4 text-muted-foreground" />
-                  ) : (
-                    <Eye className="w-4 h-4 text-muted-foreground" />
-                  )}
-                </Button>
-              </div>
-              <Button
-                variant="outline"
-                onClick={testUnstructuredConnection}
-                disabled={!unstructuredKey || unstructuredStatus === "testing"}
-              >
-                Test Connection
-              </Button>
-            </div>
-            <a
-              href="https://unstructured.io"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              Get a free API key
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-
-          <div className="pt-2 border-t border-border">
-            <p className="text-xs text-muted-foreground">
-              For additional format support, see{" "}
-              <a href="/data-types" className="text-primary hover:underline">Data Types</a>.
-              External LLMs connect to vectorAIz via MCP or REST.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Section 2: Processing Settings */}
       <Card className="bg-card border-border">
         <CardHeader>
@@ -981,7 +847,7 @@ const SettingsPage = () => {
             </div>
             <Slider
               value={memoryLimit}
-              onValueChange={setMemoryLimit}
+              onValueChange={(v) => { setMemoryLimit(v); setIsDirty(true); }}
               min={4}
               max={32}
               step={2}
@@ -1000,6 +866,7 @@ const SettingsPage = () => {
             <Label className="text-foreground">Concurrent Uploads</Label>
             <Select value={concurrentUploads} onValueChange={(v) => {
               setConcurrentUploads(v);
+              setIsDirty(true);
               if (v === 'auto') {
                 localStorage.removeItem('vectoraiz_concurrent_uploads');
               } else {
@@ -1050,7 +917,7 @@ const SettingsPage = () => {
                 id="data-dir"
                 type="text"
                 value={dataDirectory}
-                onChange={(e) => setDataDirectory(e.target.value)}
+                onChange={(e) => { setDataDirectory(e.target.value); setIsDirty(true); }}
                 className="bg-background border-border text-foreground font-mono"
               />
               <Button variant="outline" className="gap-2">
@@ -1120,7 +987,7 @@ const SettingsPage = () => {
                 Make Qdrant accessible for external connections
               </p>
             </div>
-            <Switch checked={devMode} onCheckedChange={setDevMode} />
+            <Switch checked={devMode} onCheckedChange={(v) => { setDevMode(v); setIsDirty(true); }} />
           </div>
 
           {devMode && (
@@ -1176,7 +1043,7 @@ client = QdrantClient(host="localhost", port=6333)`}
                   type={showMarketplaceKey ? "text" : "password"}
                   placeholder="Enter your marketplace API key"
                   value={marketplaceKey}
-                  onChange={(e) => setMarketplaceKey(e.target.value)}
+                  onChange={(e) => { setMarketplaceKey(e.target.value); setIsDirty(true); }}
                   className="bg-background border-border text-foreground pr-10"
                 />
                 <Button
@@ -1386,7 +1253,7 @@ docker compose -f docker-compose.customer.yml up -d vectoraiz`}
       {/* Sticky Save Button */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/95 backdrop-blur border-t border-border">
         <div className="max-w-3xl mx-auto flex justify-end">
-          <Button onClick={handleSaveSettings} className="gap-2">
+          <Button onClick={handleSaveSettings} disabled={!isDirty} className="gap-2">
             Save Settings
           </Button>
         </div>

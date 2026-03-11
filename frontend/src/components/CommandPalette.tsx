@@ -10,6 +10,10 @@ import {
   Upload,
   FileSpreadsheet,
   Loader2,
+  FileOutput,
+  Store,
+  HandHelping,
+  FileStack,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -31,10 +35,15 @@ interface CommandPaletteProps {
 const pages = [
   { name: "Dashboard", path: "/", icon: LayoutDashboard },
   { name: "Datasets", path: "/datasets", icon: Database },
-  { name: "Earnings", path: "/earnings", icon: DollarSign },
   { name: "Search", path: "/search", icon: Search },
   { name: "SQL Query", path: "/sql", icon: Code },
+  { name: "Artifacts", path: "/artifacts", icon: FileOutput },
+  { name: "Databases", path: "/databases", icon: Database },
   { name: "Settings", path: "/settings", icon: Settings },
+  { name: "ai.market", path: "/ai-market", icon: Store },
+  { name: "I Need Data", path: "/data-requests", icon: HandHelping },
+  { name: "Earnings", path: "/earnings", icon: DollarSign },
+  { name: "Data Types", path: "/data-types", icon: FileStack },
 ];
 
 const CommandPalette = ({ open, onOpenChange, onOpenUpload }: CommandPaletteProps) => {
