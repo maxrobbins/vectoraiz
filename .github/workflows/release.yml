@@ -18,7 +18,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       is_rc: ${{ steps.version.outputs.is_rc }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Extract version from tag
         id: version
@@ -104,20 +104,20 @@ jobs:
     needs: verify-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Compute image tags
         id: tags
@@ -135,7 +135,7 @@ jobs:
           echo "$TAGS"
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.customer
@@ -154,7 +154,7 @@ jobs:
     needs: [verify-release, build-push]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Wait for GHCR propagation
         run: sleep 30
@@ -189,7 +189,7 @@ jobs:
           echo "✅ Multi-arch manifest verified: amd64 + arm64"
 
       - name: Set up QEMU for arm64 emulation
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
 
       - name: Boot arm64 container via QEMU
@@ -324,7 +324,7 @@ jobs:
     needs: [verify-release, build-push]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Run Linux install script end-to-end
         env:
@@ -366,7 +366,7 @@ jobs:
     needs: [verify-release, smoke-test, e2e-install-test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Make installer scripts executable
         run: |
