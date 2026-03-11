@@ -496,6 +496,10 @@ rc_flow() {
 # =============================================================================
 # FLOW: Promote RC to stable
 # =============================================================================
+# Fixed in S244: reordered to build image BEFORE updating install script.
+# Previous order had a race condition where docker-compose.yml on main would
+# reference a Docker image version that didn't exist yet (between push to main
+# and image build completion). Now we: tag → wait for image → then update main.
 promote_flow() {
   local rc_tag="${1:-}"
 
@@ -549,11 +553,10 @@ promote_flow() {
   echo -e "${BOLD}║  Promoting $rc_tag → v${VERSION}$(printf '%*s' $((25 - ${#rc_tag} - ${#VERSION})) '')║${RESET}"
   echo -e "${BOLD}╚═══════════════════════════════════════════════════╝${RESET}"
 
-  # Update compose file, commit, push
-  step1_update_compose
-  step2_commit_push
-
-  # Create stable tag from the SAME commit the RC pointed to
+  # --- Race condition prevention: build image BEFORE updating install script ---
+  # Create stable tag first so GitHub Actions starts building the Docker image.
+  # Wait for the image to be available on GHCR. Only THEN update compose + push
+  # to main, so the install script never references a non-existent image.
   header "Create stable tag from RC commit"
   git tag -a "v$VERSION" "$rc_sha" -m "Release $VERSION (promoted from $rc_tag)"
   pass "Created tag v$VERSION from $rc_sha"
@@ -561,6 +564,10 @@ promote_flow() {
   pass "Pushed tag v$VERSION to origin"
 
   step4_wait_for_image
+
+  # Image exists on GHCR — now safe to update install script on main
+  step1_update_compose
+  step2_commit_push
 
   # Create stable GitHub Release (--latest, NOT prerelease)
   header "Create stable GitHub Release"
