@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from app.auth.api_key_auth import get_current_user
 from app.config import settings
+from app.core.channel_config import CHANNEL
 from app.core.crypto import DeviceCrypto
 from app.services.registration_service import _get_device_id
 from app.services.serial_store import get_serial_store
@@ -127,6 +128,8 @@ async def publish_to_marketplace(
     payload = body.model_dump(exclude_none=True)
     # Map vz_dataset_id -> vz_raw_listing_id for ai.market
     payload["vz_raw_listing_id"] = payload.pop("vz_dataset_id")
+    # Attribution: informational only, tells ai.market how VZ was installed
+    payload["download_channel"] = CHANNEL.value
 
     # 4. JCS hash + JWT
     metadata_hash = _jcs_hash(payload)

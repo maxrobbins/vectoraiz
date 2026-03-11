@@ -18,6 +18,7 @@ ALLOWED_FILES = {
     "app/prompts/channel_prompts.py",
     "app/services/prompt_factory.py",
     "app/routers/health.py",
+    "app/routers/marketplace_publish.py",  # download_channel attribution (informational)
 }
 
 CHANNEL_IMPORT_PATTERN = re.compile(
@@ -73,3 +74,32 @@ def test_channel_only_in_allowed_files():
         f"C2 violation: channel_config imported in non-allowed files: {violations}. "
         f"Allowed: {ALLOWED_FILES}"
     )
+
+
+def test_download_channel_in_publish_is_informational():
+    """download_channel in marketplace_publish.py is informational metadata only (C2).
+
+    Verify that:
+    1. CHANNEL is used only to set payload["download_channel"] = CHANNEL.value
+    2. CHANNEL is NOT used in any conditional (if/else/match) to gate behavior
+    """
+    publish_file = REPO_ROOT / "app" / "routers" / "marketplace_publish.py"
+    assert publish_file.exists(), "marketplace_publish.py not found"
+    content = publish_file.read_text()
+
+    # Must contain the attribution line
+    assert 'payload["download_channel"] = CHANNEL.value' in content, (
+        "marketplace_publish.py must include download_channel attribution"
+    )
+
+    # Must NOT use CHANNEL in conditionals — that would be feature gating
+    lines = content.splitlines()
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if "CHANNEL" in line and any(kw in stripped for kw in ["if CHANNEL", "if CHANNEL.", "match CHANNEL"]):
+            raise AssertionError(
+                f"C2 violation at line {i}: CHANNEL used in conditional — "
+                f"download_channel must be informational only, not gate behavior"
+            )

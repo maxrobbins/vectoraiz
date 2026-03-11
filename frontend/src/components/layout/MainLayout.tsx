@@ -9,11 +9,15 @@ import FileUploadModal from "@/components/FileUploadModal";
 import useKeyboardShortcuts from "@/hooks/useKeyboardShortcuts";
 import { useUpload } from "@/contexts/UploadContext";
 import VersionBadge from "@/components/VersionBadge";
+import OnboardingWizard, { isOnboardingComplete } from "@/components/onboarding/OnboardingWizard";
+import { useChannel } from "@/hooks/useChannel";
 
 const MainLayout = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingComplete());
+  const channel = useChannel();
   const { openModal } = useUpload();
 
   useKeyboardShortcuts({
@@ -53,6 +57,9 @@ const MainLayout = () => {
       />
       <FileUploadModal />
       <VersionBadge />
+      {showOnboarding && (
+        <OnboardingWizard channel={channel} onComplete={() => setShowOnboarding(false)} />
+      )}
     </div>
   );
 };
