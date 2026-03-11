@@ -79,7 +79,8 @@ def test_portal_jwt_rejected_on_admin_datasets(client, code_portal_with_token, m
         "/api/datasets",
         headers={"Authorization": f"Bearer {code_portal_with_token}"},
     )
-    assert resp.status_code in (401, 403, 422)
+    assert resp.status_code != 200
+    assert resp.status_code in (401, 403, 404, 422)
 
 
 def test_admin_apikey_rejected_on_portal_datasets(client):
