@@ -90,6 +90,11 @@ async def _fetch_latest_tag() -> str | None:
     if not semver_tags:
         return None
 
+    # Prefer the highest stable tag; fall back to highest RC if no stable exists
+    stable = [(t, raw) for t, raw in semver_tags if t[-2] == 1]  # stable flag == 1
+    if stable:
+        stable.sort(reverse=True)
+        return stable[0][1]
     semver_tags.sort(reverse=True)
     return semver_tags[0][1]
 

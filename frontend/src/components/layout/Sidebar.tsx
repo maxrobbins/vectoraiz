@@ -89,7 +89,7 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
       <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
         <a href="https://vectoraiz.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
           <img
-            src="/vectoraiz-logo-sm.png"
+            src="/vectoraiz-logo.jpg"
             alt="vectorAIz"
             className="w-8 h-8 rounded-lg object-cover"
           />

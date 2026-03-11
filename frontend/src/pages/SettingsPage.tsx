@@ -1218,7 +1218,7 @@ client = QdrantClient(host="localhost", port=6333)`}
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Current Version</span>
-              <span className="text-foreground font-mono">{versionInfo?.current ?? "..."}</span>
+              <span className="text-foreground font-mono">{versionInfo?.current?.replace(/^v/, '') ?? "..."}</span>
             </div>
             <div className="flex justify-between text-sm items-center">
               <span className="text-muted-foreground">Latest Version</span>
