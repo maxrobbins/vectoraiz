@@ -162,6 +162,10 @@ async def get_portal_session(request: Request) -> PortalSession:
                 detail="Session expired, please re-authenticate",
             )
 
+        # Gate 3: Check session not revoked
+        if claims["sub"] not in config.active_sessions:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session revoked")
+
         return PortalSession(
             session_id=claims["sub"],
             tier=PortalTier(claims["tier"]),
@@ -201,6 +205,10 @@ async def get_portal_session(request: Request) -> PortalSession:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid session tier",
             )
+
+        # Gate 3: Check session not revoked
+        if claims["sub"] not in config.active_sessions:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session revoked")
 
         return PortalSession(
             session_id=claims["sub"],

@@ -44,6 +44,8 @@ from app.services.portal_oidc import (
     exchange_code_for_tokens,
     validate_id_token,
     store_refresh_token,
+    store_id_token,
+    get_id_token,
     clear_refresh_token,
     log_portal_access,
     get_access_logs,
@@ -236,6 +238,9 @@ async def sso_callback(
     if tokens.get("refresh_token"):
         store_refresh_token(session.session_id, tokens["refresh_token"])
 
+    # Store id_token for id_token_hint on logout (Gate 3)
+    store_id_token(session.session_id, id_token_str)
+
     # Log access
     log_portal_access(session.session_id, oidc_subject, oidc_email, "login")
 
@@ -263,11 +268,12 @@ async def sso_logout(session: PortalSession = Depends(get_portal_session)):
     if session.oidc_subject:
         log_portal_access(session.session_id, session.oidc_subject, session.oidc_email, "logout")
 
-    # Try to get IdP end_session_endpoint
+    # Try to get IdP end_session_endpoint with id_token_hint (Gate 3)
     end_session_url = None
     if config.oidc_issuer:
         try:
-            end_session_url = await get_end_session_url(config)
+            id_token_hint = get_id_token(session.session_id)
+            end_session_url = await get_end_session_url(config, id_token_hint=id_token_hint)
         except Exception:
             pass
 
@@ -491,9 +497,10 @@ async def test_oidc_connection():
             "end_session_endpoint": doc.get("end_session_endpoint"),
         }
     except Exception as e:
+        logger.error("OIDC test connection failed: %s", e)
         return {
             "success": False,
-            "error": str(e),
+            "error": "Failed to connect to identity provider",
         }
 
 
@@ -526,7 +533,7 @@ async def revoke_all_portal_sessions_v2():
     config = get_portal_config()
     config = AccessCodeValidator.invalidate_sessions_on_rotation(config)
     save_portal_config(config)
-    # Clear all refresh tokens
-    from app.services.portal_oidc import clear_all_sso_state
-    clear_all_sso_state()
+    # Clear session tokens but preserve audit logs (Gate 3)
+    from app.services.portal_oidc import clear_sessions_only
+    clear_sessions_only()
     return {"message": "All portal sessions revoked", "portal_session_version": config.portal_session_version}

@@ -44,6 +44,11 @@ _pending_states: Dict[str, Dict[str, Any]] = {}  # state -> {nonce, created_at, 
 _refresh_tokens: Dict[str, str] = {}  # session_id -> refresh_token
 
 # ---------------------------------------------------------------------------
+# ID tokens (in-memory, keyed by session_id) — for id_token_hint on logout
+# ---------------------------------------------------------------------------
+_id_tokens: Dict[str, str] = {}  # session_id -> raw id_token string
+
+# ---------------------------------------------------------------------------
 # Access logs (in-memory, capped at 1000)
 # ---------------------------------------------------------------------------
 _access_logs: deque = deque(maxlen=1000)
@@ -239,9 +244,19 @@ async def validate_id_token(
 # Refresh Token
 # ---------------------------------------------------------------------------
 
+def _cleanup_expired_refresh_tokens():
+    """Prune refresh/id tokens whose sessions have expired from active_sessions."""
+    config = get_portal_config()
+    expired = [sid for sid in _refresh_tokens if sid not in config.active_sessions]
+    for sid in expired:
+        _refresh_tokens.pop(sid, None)
+        _id_tokens.pop(sid, None)
+
+
 def store_refresh_token(session_id: str, refresh_token: str):
     """Store refresh token for a portal session (in-memory)."""
     _refresh_tokens[session_id] = refresh_token
+    _cleanup_expired_refresh_tokens()
 
 
 def get_refresh_token(session_id: str) -> Optional[str]:
@@ -249,49 +264,24 @@ def get_refresh_token(session_id: str) -> Optional[str]:
     return _refresh_tokens.get(session_id)
 
 
-def clear_refresh_token(session_id: str):
-    """Clear refresh token for a session."""
+def clear_session_tokens(session_id: str):
+    """Clear refresh token and id token for a session."""
     _refresh_tokens.pop(session_id, None)
+    _id_tokens.pop(session_id, None)
 
 
-async def refresh_access_token(config: PortalConfig, session_id: str) -> Optional[Dict[str, Any]]:
-    """Attempt to refresh tokens using stored refresh_token."""
-    refresh_token = _refresh_tokens.get(session_id)
-    if not refresh_token:
-        return None
+# Keep old name as alias for backwards compat in existing call sites
+clear_refresh_token = clear_session_tokens
 
-    doc = await fetch_oidc_discovery(config.oidc_issuer)
-    token_endpoint = doc["token_endpoint"]
 
-    client_secret = config.oidc_client_secret
-    if client_secret and client_secret.startswith("gAAAAA"):
-        client_secret = decrypt_client_secret(client_secret)
+def store_id_token(session_id: str, id_token: str):
+    """Store raw id_token string for id_token_hint on logout."""
+    _id_tokens[session_id] = id_token
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                token_endpoint,
-                data={
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
-                    "client_id": config.oidc_client_id,
-                    "client_secret": client_secret,
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-            resp.raise_for_status()
-            tokens = resp.json()
 
-        # Update stored refresh token if a new one was issued
-        if tokens.get("refresh_token"):
-            _refresh_tokens[session_id] = tokens["refresh_token"]
-
-        return tokens
-    except Exception as e:
-        logger.warning("Refresh token exchange failed for session %s: %s", session_id, e)
-        # Clear invalid refresh token
-        _refresh_tokens.pop(session_id, None)
-        return None
+def get_id_token(session_id: str) -> Optional[str]:
+    """Get stored id_token for a session."""
+    return _id_tokens.get(session_id)
 
 
 # ---------------------------------------------------------------------------
@@ -334,11 +324,20 @@ def clear_access_logs():
 # Session cleanup helpers
 # ---------------------------------------------------------------------------
 
+def clear_sessions_only():
+    """Clear session-related state but preserve audit logs (Gate 3)."""
+    _discovery_cache.clear()
+    _pending_states.clear()
+    _refresh_tokens.clear()
+    _id_tokens.clear()
+
+
 def clear_all_sso_state():
     """Clear all in-memory SSO state (for testing)."""
     _discovery_cache.clear()
     _pending_states.clear()
     _refresh_tokens.clear()
+    _id_tokens.clear()
     _access_logs.clear()
 
 

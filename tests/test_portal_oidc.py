@@ -31,6 +31,7 @@ from app.schemas.portal import PortalConfig, DatasetPortalConfig, PortalTier
 from app.services.portal_oidc import (
     clear_all_sso_state,
     clear_discovery_cache,
+    clear_sessions_only,
     log_portal_access,
     get_access_logs,
     clear_access_logs,
@@ -38,9 +39,14 @@ from app.services.portal_oidc import (
     decrypt_client_secret,
     validate_state,
     _pending_states,
+    _refresh_tokens,
+    _id_tokens,
+    _cleanup_expired_refresh_tokens,
     store_refresh_token,
     get_refresh_token,
     clear_refresh_token,
+    store_id_token,
+    get_id_token,
 )
 from app.middleware.portal_auth import (
     create_portal_jwt,
@@ -526,7 +532,7 @@ def test_oidc_test_connection_unreachable(client, sso_portal_config):
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is False
-        assert "Connection refused" in data["error"]
+        assert data["error"] == "Failed to connect to identity provider"
 
 
 # ---------------------------------------------------------------------------
@@ -638,3 +644,170 @@ def test_public_config_shows_sso_tier(client, sso_portal_config):
     data = resp.json()
     assert data["tier"] == "sso"
     assert data["enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# Gate 3 Test: Session revocation bypass — middleware rejects revoked session
+# ---------------------------------------------------------------------------
+
+def test_revoked_session_rejected_by_middleware(client, sso_portal_config):
+    """Gate 3 P0: JWT with valid sig/expiry/psv but revoked session_id → 401."""
+    token, session = _make_sso_session_token(sso_portal_config)
+
+    # Verify it works first
+    resp = client.get(
+        "/api/portal/datasets",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+
+    # Admin revokes just this session
+    config = get_portal_config()
+    del config.active_sessions[session.session_id]
+    save_portal_config(config)
+
+    # Token still has valid sig/expiry/psv, but session_id removed → must 401
+    resp = client.get(
+        "/api/portal/datasets",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 401
+    assert "revoked" in resp.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Gate 3 Test: Code-tier session revocation
+# ---------------------------------------------------------------------------
+
+def test_revoked_code_session_rejected(client):
+    """Gate 3 P0: Code-tier JWT with revoked session_id → 401."""
+    from app.schemas.portal import PortalSession as PS
+    config = PortalConfig(
+        enabled=True,
+        tier=PortalTier.code,
+        base_url="http://localhost:8100",
+        access_code_hash=AccessCodeValidator.hash_code("testcode123"),
+        datasets={
+            "test-dataset": DatasetPortalConfig(
+                portal_visible=True, display_columns=["name"], max_results=50,
+            ),
+        },
+    )
+    save_portal_config(config)
+
+    now = datetime.now(timezone.utc)
+    session = PS(
+        session_id=secrets.token_hex(16),
+        tier=PortalTier.code,
+        ip_address="127.0.0.1",
+        created_at=now,
+        expires_at=now + timedelta(hours=8),
+        portal_session_version=config.portal_session_version,
+    )
+    token = create_portal_jwt(session)
+    # Track session
+    config.active_sessions[session.session_id] = session.expires_at.isoformat()
+    save_portal_config(config)
+
+    # Works initially
+    resp = client.get("/api/portal/datasets", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+
+    # Revoke
+    config = get_portal_config()
+    config.active_sessions.pop(session.session_id, None)
+    save_portal_config(config)
+
+    resp = client.get("/api/portal/datasets", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+    assert "revoked" in resp.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Gate 3 Test: Cleanup of expired refresh tokens
+# ---------------------------------------------------------------------------
+
+def test_cleanup_expired_refresh_tokens(sso_portal_config):
+    """Gate 3 P1: store_refresh_token prunes tokens for expired sessions."""
+    config = sso_portal_config
+
+    # Simulate two old sessions with refresh tokens but not in active_sessions
+    _refresh_tokens["expired-sess-1"] = "old-token-1"
+    _refresh_tokens["expired-sess-2"] = "old-token-2"
+
+    # Create a new session and store its token (triggers cleanup)
+    token, session = _make_sso_session_token(config)
+    store_refresh_token(session.session_id, "new-token")
+
+    # Expired sessions should be cleaned up
+    assert "expired-sess-1" not in _refresh_tokens
+    assert "expired-sess-2" not in _refresh_tokens
+    # Active session's token preserved
+    assert get_refresh_token(session.session_id) == "new-token"
+
+
+# ---------------------------------------------------------------------------
+# Gate 3 Test: Error sanitization on test-oidc endpoint
+# ---------------------------------------------------------------------------
+
+def test_oidc_test_error_sanitized(client, sso_portal_config):
+    """Gate 3 P2: test-oidc returns generic error, not internal details."""
+    with patch("app.services.portal_oidc.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        # Simulate an error with sensitive internal details
+        mock_client.get.side_effect = Exception(
+            "Connection to 10.0.0.5:443 refused (internal network detail)"
+        )
+
+        resp = client.post(
+            "/api/settings/portal/test-oidc",
+            headers={"X-API-Key": "test"},
+        )
+        data = resp.json()
+        assert data["success"] is False
+        # Must NOT contain internal network details
+        assert "10.0.0.5" not in data["error"]
+        assert data["error"] == "Failed to connect to identity provider"
+
+
+# ---------------------------------------------------------------------------
+# Gate 3 Test: Revoke-all preserves access logs
+# ---------------------------------------------------------------------------
+
+def test_revoke_all_preserves_access_logs(client, sso_portal_config):
+    """Gate 3 P2: DELETE /sessions clears tokens but preserves audit logs."""
+    # Create access logs
+    log_portal_access("sess-1", "user-1", "u1@test.com", "login")
+    log_portal_access("sess-2", "user-2", "u2@test.com", "login")
+    assert len(get_access_logs()) == 2
+
+    # Create a session so there's something to revoke
+    _make_sso_session_token(sso_portal_config)
+
+    # Revoke all
+    resp = client.delete(
+        "/api/admin/portal/sessions",
+        headers={"X-API-Key": "test"},
+    )
+    assert resp.status_code == 200
+
+    # Access logs must survive
+    logs = get_access_logs()
+    assert len(logs) == 2
+    assert logs[0].oidc_subject == "user-2"
+
+
+# ---------------------------------------------------------------------------
+# Gate 3 Test: id_token storage and retrieval
+# ---------------------------------------------------------------------------
+
+def test_id_token_store_and_retrieve():
+    """Gate 3 P1: id_token stored and retrievable for logout hint."""
+    store_id_token("sess-abc", "eyJhbGciOi.test.token")
+    assert get_id_token("sess-abc") == "eyJhbGciOi.test.token"
+    assert get_id_token("nonexistent") is None
+    # clear_refresh_token (alias for clear_session_tokens) clears both
+    clear_refresh_token("sess-abc")
+    assert get_id_token("sess-abc") is None
