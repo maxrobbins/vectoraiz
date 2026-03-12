@@ -6,6 +6,7 @@
  */
 
 import { Outlet } from "react-router-dom";
+import PortalAllAIChat from "./PortalAllAIChat";
 
 const PortalLayout = () => {
   return (
@@ -34,6 +35,9 @@ const PortalLayout = () => {
           <span className="font-medium text-foreground">vectorAIz</span>
         </p>
       </footer>
+
+      {/* allAI Chat (Phase 1.5) */}
+      <PortalAllAIChat />
     </div>
   );
 };

@@ -560,6 +560,9 @@ def create_app() -> FastAPI:
     # PUBLIC — Portal (BQ-VZ-SHARED-SEARCH) — own trust zone, own auth (M2)
     from app.routers.portal import router as portal_router, admin_router as portal_admin_router
     app.include_router(portal_router, prefix="/api/portal", tags=["portal"])
+    # PUBLIC — Portal allAI Chat (Phase 1.5) — portal auth, read-only tools
+    from app.routers.portal_allai import router as portal_allai_router
+    app.include_router(portal_allai_router, prefix="/api/portal/allai", tags=["portal-allai"])
     # ADMIN ONLY — Portal management
     app.include_router(
         portal_admin_router,
