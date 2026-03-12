@@ -257,11 +257,14 @@ async def sso_logout(session: PortalSession = Depends(get_portal_session)):
     """Logout SSO session: clear portal session, optionally redirect to IdP logout."""
     config = get_portal_config()
 
+    # Retrieve id_token BEFORE clearing tokens (clear_refresh_token wipes both)
+    id_token_hint = get_id_token(session.session_id) if config.oidc_issuer else None
+
     # Remove from active sessions
     config.active_sessions.pop(session.session_id, None)
     save_portal_config(config)
 
-    # Clear refresh token
+    # Clear refresh token (also clears id_token)
     clear_refresh_token(session.session_id)
 
     # Log access
@@ -272,7 +275,6 @@ async def sso_logout(session: PortalSession = Depends(get_portal_session)):
     end_session_url = None
     if config.oidc_issuer:
         try:
-            id_token_hint = get_id_token(session.session_id)
             end_session_url = await get_end_session_url(config, id_token_hint=id_token_hint)
         except Exception:
             pass

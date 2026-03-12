@@ -811,3 +811,39 @@ def test_id_token_store_and_retrieve():
     # clear_refresh_token (alias for clear_session_tokens) clears both
     clear_refresh_token("sess-abc")
     assert get_id_token("sess-abc") is None
+
+
+# ---------------------------------------------------------------------------
+# Gate 3 Test: Logout includes id_token_hint in end_session_url
+# ---------------------------------------------------------------------------
+
+def test_sso_logout_includes_id_token_hint(client, sso_portal_config):
+    """Logout retrieves id_token BEFORE clearing tokens, so end_session_url gets id_token_hint."""
+    token, session = _make_sso_session_token(sso_portal_config)
+    store_refresh_token(session.session_id, "mock-refresh")
+    store_id_token(session.session_id, "mock-id-token-jwt")
+
+    with patch("app.services.portal_oidc.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_response = MagicMock()
+        mock_response.json.return_value = MOCK_DISCOVERY
+        mock_response.raise_for_status = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        resp = client.post(
+            "/api/portal/auth/sso/logout",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["message"] == "Logged out"
+    # end_session_url should include the id_token_hint
+    assert data["end_session_url"] is not None
+    assert "id_token_hint=mock-id-token-jwt" in data["end_session_url"]
+
+    # Tokens should be cleared after logout
+    assert get_refresh_token(session.session_id) is None
+    assert get_id_token(session.session_id) is None
