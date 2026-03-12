@@ -319,6 +319,11 @@ class _PortalToolExecutor:
 
         query = tool_input.get("query", "")
         dataset_id = tool_input.get("dataset_id")
+        if not dataset_id:
+            return ToolResult(
+                frontend_data={"error": "dataset_id is required in portal mode"},
+                llm_summary="dataset_id is required. Use list_datasets to find available datasets.",
+            )
         limit = min(tool_input.get("limit", 10), 20)
         svc = get_search_service()
         results = svc.search(query=query, dataset_id=dataset_id, limit=limit)
@@ -356,6 +361,13 @@ class _PortalToolExecutor:
     async def _exec_run_sql_query(self, tool_input: dict):
         from app.services.allai_tool_result import ToolResult
         from app.services.sql_service import get_sql_service
+
+        dataset_id = tool_input.get("dataset_id")
+        if not dataset_id:
+            return ToolResult(
+                frontend_data={"error": "dataset_id is required in portal mode"},
+                llm_summary="dataset_id is required. Use list_datasets to find available datasets.",
+            )
 
         query = tool_input.get("query", "")
 

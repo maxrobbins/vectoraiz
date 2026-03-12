@@ -216,9 +216,11 @@ class TestToolAllowlist:
         assert result is not None
         assert "not available" in result.llm_summary.lower()
 
-    def test_search_vectors_allowed(self):
-        """search_vectors (read-only search) should pass allowlist."""
-        result = check_portal_tool_allowed("search_vectors", {"query": "test"})
+    def test_search_vectors_allowed_with_dataset_id(self, enabled_open_portal):
+        """search_vectors with valid dataset_id should pass allowlist + ACL."""
+        result = check_portal_tool_allowed(
+            "search_vectors", {"query": "test", "dataset_id": "visible-ds-1"}
+        )
         assert result is None  # None = allowed
 
     def test_list_datasets_allowed(self):
@@ -226,15 +228,38 @@ class TestToolAllowlist:
         result = check_portal_tool_allowed("list_datasets", {})
         assert result is None
 
-    def test_preview_rows_allowed_no_dataset_id(self):
-        """preview_rows without dataset_id passes allowlist (no ACL triggered)."""
+    def test_preview_rows_blocked_no_dataset_id(self):
+        """preview_rows without dataset_id must be blocked."""
         result = check_portal_tool_allowed("preview_rows", {})
-        assert result is None
+        assert result is not None
+        assert "not available" in result.llm_summary.lower()
 
-    def test_run_sql_query_allowed_no_dataset_id(self):
-        """run_sql_query without dataset_id passes allowlist (no ACL triggered)."""
+    def test_run_sql_query_blocked_no_dataset_id(self):
+        """run_sql_query without dataset_id must be blocked."""
         result = check_portal_tool_allowed("run_sql_query", {"query": "SELECT 1"})
-        assert result is None
+        assert result is not None
+        assert "not available" in result.llm_summary.lower()
+
+    def test_search_vectors_blocked_no_dataset_id(self):
+        """search_vectors without dataset_id must be blocked."""
+        result = check_portal_tool_allowed("search_vectors", {"query": "test"})
+        assert result is not None
+        assert "not available" in result.llm_summary.lower()
+
+    def test_get_dataset_detail_blocked_no_dataset_id(self):
+        """get_dataset_detail without dataset_id must be blocked."""
+        result = check_portal_tool_allowed("get_dataset_detail", {})
+        assert result is not None
+
+    def test_get_dataset_statistics_blocked_no_dataset_id(self):
+        """get_dataset_statistics without dataset_id must be blocked."""
+        result = check_portal_tool_allowed("get_dataset_statistics", {})
+        assert result is not None
+
+    def test_dataset_scoped_tool_empty_string_dataset_id_blocked(self):
+        """Dataset-scoped tool with empty string dataset_id must be blocked."""
+        result = check_portal_tool_allowed("preview_rows", {"dataset_id": ""})
+        assert result is not None
 
 
 # ===========================================================================
@@ -292,10 +317,10 @@ class TestDatasetACL:
         result = check_portal_tool_allowed("list_datasets", {})
         assert result is None
 
-    def test_tool_without_dataset_id_passes(self, enabled_open_portal):
-        """Dataset-scoped tool with no dataset_id skips ACL (tool will handle)."""
+    def test_tool_without_dataset_id_blocked(self, enabled_open_portal):
+        """Dataset-scoped tool with no dataset_id must be blocked at the filter."""
         result = check_portal_tool_allowed("search_vectors", {"query": "test"})
-        assert result is None  # No dataset_id = no ACL block
+        assert result is not None  # No dataset_id = blocked
 
 
 # ===========================================================================

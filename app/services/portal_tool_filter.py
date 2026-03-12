@@ -62,14 +62,18 @@ def check_portal_tool_allowed(tool_name: str, tool_input: dict) -> Optional[Tool
     # Step 2: Dataset ACL enforcement for dataset-scoped tools
     if tool_name in DATASET_SCOPED_TOOLS:
         dataset_id = tool_input.get("dataset_id")
-        if dataset_id:
-            try:
-                check_dataset_acl(dataset_id)
-            except Exception:
-                logger.warning(
-                    "Portal tool blocked (ACL): %s on dataset %s",
-                    tool_name, dataset_id,
-                )
-                return ACL_BLOCKED_RESULT
+        if not dataset_id:
+            logger.warning(
+                "Portal tool blocked (missing dataset_id): %s", tool_name,
+            )
+            return ACL_BLOCKED_RESULT
+        try:
+            check_dataset_acl(dataset_id)
+        except Exception:
+            logger.warning(
+                "Portal tool blocked (ACL): %s on dataset %s",
+                tool_name, dataset_id,
+            )
+            return ACL_BLOCKED_RESULT
 
     return None  # Allowed
