@@ -6,9 +6,14 @@
  */
 
 import { Outlet } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { LogOut } from "lucide-react";
+import { usePortalAuth } from "@/hooks/usePortalAuth";
 import PortalAllAIChat from "./PortalAllAIChat";
 
 const PortalLayout = () => {
+  const { config, ssoUser, logout } = usePortalAuth();
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header */}
@@ -18,6 +23,18 @@ const PortalLayout = () => {
             <span className="text-primary-foreground font-bold text-sm">V</span>
           </div>
           <h1 className="text-lg font-semibold text-foreground">Search Portal</h1>
+          {/* SSO user info */}
+          {config?.tier === "sso" && ssoUser && (
+            <div className="ml-auto flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">
+                {ssoUser.name || ssoUser.email || "SSO User"}
+              </span>
+              <Button variant="ghost" size="sm" onClick={logout}>
+                <LogOut className="w-4 h-4 mr-1" />
+                Sign out
+              </Button>
+            </div>
+          )}
         </div>
       </header>
 

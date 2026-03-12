@@ -11,12 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Lock, AlertCircle } from "lucide-react";
+import { Loader2, Lock, AlertCircle, LogIn } from "lucide-react";
 import { usePortalAuth } from "@/hooks/usePortalAuth";
+import { portalApi } from "@/api/portalApi";
 
 const PortalAuth = () => {
   const navigate = useNavigate();
-  const { login, error: authError } = usePortalAuth();
+  const { config, login, error: authError } = usePortalAuth();
   const [code, setCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -39,6 +40,42 @@ const PortalAuth = () => {
     }
   };
 
+  const handleSSOLogin = () => {
+    portalApi.initiateSSO();
+  };
+
+  // SSO tier: show "Sign in with SSO" button
+  if (config?.tier === "sso") {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="w-full max-w-md bg-card border-border">
+          <CardHeader className="text-center">
+            <div className="mx-auto w-12 h-12 rounded-full bg-secondary flex items-center justify-center mb-4">
+              <LogIn className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <CardTitle>Sign In Required</CardTitle>
+            <CardDescription>
+              Sign in with your organization account to access this portal.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {error && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <Button onClick={handleSSOLogin} className="w-full">
+              <LogIn className="w-4 h-4 mr-2" />
+              Sign in with SSO
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Code tier: show access code form
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
       <Card className="w-full max-w-md bg-card border-border">

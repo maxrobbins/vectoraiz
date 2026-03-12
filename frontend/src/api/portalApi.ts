@@ -100,6 +100,12 @@ export interface PortalChatEvent {
   text: string;
 }
 
+export interface PortalSSOUserInfo {
+  email: string | null;
+  name: string | null;
+  subject: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // API calls
 // ---------------------------------------------------------------------------
@@ -115,6 +121,24 @@ export const portalApi = {
       body: JSON.stringify({ code }),
     });
     setPortalToken(res.token);
+    return res;
+  },
+
+  /** Initiate SSO login (redirects to IdP) */
+  initiateSSO: () => {
+    window.location.href = `${getApiUrl()}/api/portal/auth/sso/authorize`;
+  },
+
+  /** Get SSO user info */
+  getSSOUserInfo: () => portalFetch<PortalSSOUserInfo>("/api/portal/auth/sso/userinfo"),
+
+  /** Logout SSO session */
+  ssoLogout: async (): Promise<{ message: string; end_session_url: string | null }> => {
+    const res = await portalFetch<{ message: string; end_session_url: string | null }>(
+      "/api/portal/auth/sso/logout",
+      { method: "POST" }
+    );
+    clearPortalToken();
     return res;
   },
 

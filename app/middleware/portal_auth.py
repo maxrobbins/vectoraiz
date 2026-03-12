@@ -78,6 +78,13 @@ def create_portal_jwt(session: PortalSession) -> str:
         "iat": now,
         "exp": session.expires_at,
     }
+    # Phase 2: Include OIDC claims in JWT for SSO sessions
+    if session.oidc_subject:
+        payload["oidc_sub"] = session.oidc_subject
+    if session.oidc_email:
+        payload["oidc_email"] = session.oidc_email
+    if session.oidc_name:
+        payload["oidc_name"] = session.oidc_name
     return jwt.encode(payload, get_portal_jwt_secret(), algorithm=PORTAL_JWT_ALGORITHM)
 
 
@@ -165,9 +172,46 @@ async def get_portal_session(request: Request) -> PortalSession:
         )
 
     if config.tier == PortalTier.sso:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="SSO authentication is not yet available (Phase 2)",
+        # Phase 2: SSO tier — requires valid portal JWT with OIDC claims
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="SSO authentication required",
+            )
+
+        token = auth_header[7:]
+        claims = decode_portal_jwt(token)
+        if not claims:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired SSO session",
+            )
+
+        # Check portal_session_version matches (SS-C1 applies to SSO too)
+        if claims.get("psv") != config.portal_session_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired, please re-authenticate",
+            )
+
+        # Verify this is an SSO-tier token
+        if claims.get("tier") != "sso":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid session tier",
+            )
+
+        return PortalSession(
+            session_id=claims["sub"],
+            tier=PortalTier.sso,
+            ip_address=claims.get("ip", "unknown"),
+            created_at=datetime.fromtimestamp(claims["iat"], tz=timezone.utc),
+            expires_at=datetime.fromtimestamp(claims["exp"], tz=timezone.utc),
+            portal_session_version=claims["psv"],
+            oidc_subject=claims.get("oidc_sub"),
+            oidc_email=claims.get("oidc_email"),
+            oidc_name=claims.get("oidc_name"),
         )
 
     raise HTTPException(

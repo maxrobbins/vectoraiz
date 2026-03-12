@@ -35,8 +35,8 @@ const PortalGate = () => {
     );
   }
 
-  // Code tier: redirect to auth if not authenticated
-  if (config.tier === "code" && !isAuthenticated) {
+  // Code or SSO tier: redirect to auth if not authenticated
+  if ((config.tier === "code" || config.tier === "sso") && !isAuthenticated) {
     return <Navigate to="/portal/auth" replace />;
   }
 

@@ -50,6 +50,10 @@ class PortalConfigUpdate(BaseModel):
     base_url: Optional[str] = None
     access_code: Optional[str] = None               # plaintext, will be hashed
     session_ttl_minutes: Optional[int] = Field(default=None, ge=30, le=10080)
+    # OIDC fields — Phase 2
+    oidc_issuer: Optional[str] = None
+    oidc_client_id: Optional[str] = None
+    oidc_client_secret: Optional[str] = None
 
 
 class PortalSession(BaseModel):
@@ -60,6 +64,10 @@ class PortalSession(BaseModel):
     created_at: datetime
     expires_at: datetime
     portal_session_version: int
+    # OIDC fields — Phase 2 (populated when tier=sso)
+    oidc_subject: Optional[str] = None
+    oidc_email: Optional[str] = None
+    oidc_name: Optional[str] = None
 
 
 class PortalSearchQuery(BaseModel):
@@ -105,3 +113,19 @@ class PortalPublicConfig(BaseModel):
     enabled: bool
     tier: PortalTier
     name: str = "Search Portal"
+
+
+class PortalAccessLog(BaseModel):
+    """Per-user access log entry for SSO sessions (Phase 2)."""
+    timestamp: datetime
+    session_id: str
+    oidc_subject: str
+    oidc_email: Optional[str] = None
+    action: str  # "login", "search", "logout"
+    detail: Optional[str] = None
+
+
+class PortalSSOUserInfo(BaseModel):
+    """SSO user info shown in portal header."""
+    email: Optional[str] = None
+    name: Optional[str] = None

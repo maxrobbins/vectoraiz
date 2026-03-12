@@ -1271,7 +1271,7 @@ docker compose -f docker-compose.customer.yml up -d vectoraiz`}
  */
 const PortalSettingsSection = () => {
   const [portalEnabled, setPortalEnabled] = useState(false);
-  const [portalTier, setPortalTier] = useState<"open" | "code">("open");
+  const [portalTier, setPortalTier] = useState<"open" | "code" | "sso">("open");
   const [portalBaseUrl, setPortalBaseUrl] = useState("");
   const [portalAccessCode, setPortalAccessCode] = useState("");
   const [portalLoading, setPortalLoading] = useState(true);
@@ -1283,6 +1283,15 @@ const PortalSettingsSection = () => {
     visible: boolean;
   }>>([]);
   const [portalError, setPortalError] = useState<string | null>(null);
+  // Phase 2: OIDC fields
+  const [oidcIssuer, setOidcIssuer] = useState("");
+  const [oidcClientId, setOidcClientId] = useState("");
+  const [oidcClientSecret, setOidcClientSecret] = useState("");
+  const [ssoEnabled, setSsoEnabled] = useState(true);
+  const [oidcTesting, setOidcTesting] = useState(false);
+  const [oidcTestResult, setOidcTestResult] = useState<{ success: boolean; error?: string } | null>(null);
+  const [accessLogs, setAccessLogs] = useState<Array<{ timestamp: string; oidc_email: string | null; action: string; detail: string | null }>>([]);
+  const [showAccessLogs, setShowAccessLogs] = useState(false);
 
   const apiUrl = getApiUrl();
 
@@ -1296,9 +1305,12 @@ const PortalSettingsSection = () => {
         if (res.ok) {
           const data = await res.json();
           setPortalEnabled(data.enabled);
-          setPortalTier(data.tier === "code" ? "code" : "open");
+          setPortalTier(data.tier === "code" ? "code" : data.tier === "sso" ? "sso" : "open");
           setPortalBaseUrl(data.base_url || "");
           setPortalSessionCount(data.active_session_count || 0);
+          setOidcIssuer(data.oidc_issuer || "");
+          setOidcClientId(data.oidc_client_id || "");
+          setSsoEnabled(data.sso_enabled !== false);
         }
 
         // Load datasets to show visibility toggles
@@ -1346,6 +1358,11 @@ const PortalSettingsSection = () => {
         base_url: portalBaseUrl,
       };
       if (portalAccessCode) body.access_code = portalAccessCode;
+      if (portalTier === "sso") {
+        body.oidc_issuer = oidcIssuer;
+        body.oidc_client_id = oidcClientId;
+        if (oidcClientSecret) body.oidc_client_secret = oidcClientSecret;
+      }
 
       const res = await fetch(`${apiUrl}/api/settings/portal`, {
         method: "PUT",
@@ -1436,13 +1453,16 @@ const PortalSettingsSection = () => {
         {/* Tier selector */}
         <div className="space-y-1.5">
           <Label>Access Tier</Label>
-          <Select value={portalTier} onValueChange={(v) => setPortalTier(v as "open" | "code")}>
+          <Select value={portalTier} onValueChange={(v) => setPortalTier(v as "open" | "code" | "sso")}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="open">Open (no authentication)</SelectItem>
               <SelectItem value="code">Shared Access Code</SelectItem>
+              <SelectItem value="sso" disabled={!ssoEnabled}>
+                SSO (OIDC){!ssoEnabled ? " — Requires Enterprise" : ""}
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -1464,6 +1484,67 @@ const PortalSettingsSection = () => {
               }`}>
                 Strength: {strength}
                 {strength === "weak" && " — must be 6+ alphanumeric chars, not purely numeric"}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* OIDC config (only for SSO tier) */}
+        {portalTier === "sso" && (
+          <div className="space-y-3 p-3 border border-border rounded-md">
+            <Label className="text-sm font-medium">OIDC Configuration</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Issuer URL</Label>
+              <Input
+                placeholder="https://accounts.google.com"
+                value={oidcIssuer}
+                onChange={(e) => setOidcIssuer(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Client ID</Label>
+              <Input
+                placeholder="your-client-id"
+                value={oidcClientId}
+                onChange={(e) => setOidcClientId(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Client Secret</Label>
+              <Input
+                type="password"
+                placeholder="Enter new client secret (leave empty to keep existing)"
+                value={oidcClientSecret}
+                onChange={(e) => setOidcClientSecret(e.target.value)}
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!oidcIssuer || oidcTesting}
+              onClick={async () => {
+                setOidcTesting(true);
+                setOidcTestResult(null);
+                try {
+                  // Save first so the backend has the issuer
+                  const res = await fetch(`${apiUrl}/api/settings/portal/test-oidc`, {
+                    method: "POST",
+                    credentials: "include",
+                  });
+                  const data = await res.json();
+                  setOidcTestResult(data);
+                } catch {
+                  setOidcTestResult({ success: false, error: "Connection failed" });
+                } finally {
+                  setOidcTesting(false);
+                }
+              }}
+            >
+              {oidcTesting ? "Testing..." : "Test Connection"}
+            </Button>
+            {oidcTestResult && (
+              <p className={`text-xs ${oidcTestResult.success ? "text-green-500" : "text-destructive"}`}>
+                {oidcTestResult.success ? "Connection successful" : `Error: ${oidcTestResult.error}`}
               </p>
             )}
           </div>
@@ -1532,6 +1613,49 @@ const PortalSettingsSection = () => {
             <Button variant="outline" size="sm" onClick={revokeAllSessions}>
               Revoke All
             </Button>
+          </div>
+        )}
+
+        {/* SSO Access Logs */}
+        {portalTier === "sso" && portalEnabled && (
+          <div className="space-y-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                if (showAccessLogs) {
+                  setShowAccessLogs(false);
+                  return;
+                }
+                try {
+                  const res = await fetch(`${apiUrl}/api/admin/portal/access-logs?limit=50`, {
+                    credentials: "include",
+                  });
+                  if (res.ok) {
+                    const data = await res.json();
+                    setAccessLogs(data.logs || []);
+                  }
+                } catch { /* ignore */ }
+                setShowAccessLogs(true);
+              }}
+            >
+              {showAccessLogs ? "Hide Access Logs" : "View SSO Access Logs"}
+            </Button>
+            {showAccessLogs && accessLogs.length > 0 && (
+              <div className="max-h-48 overflow-y-auto border border-border rounded-md p-2 space-y-1">
+                {accessLogs.map((log, i) => (
+                  <div key={i} className="text-xs text-muted-foreground flex gap-2">
+                    <span>{new Date(log.timestamp).toLocaleString()}</span>
+                    <span className="text-foreground">{log.oidc_email || "unknown"}</span>
+                    <span>{log.action}</span>
+                    {log.detail && <span className="truncate max-w-[200px]">{log.detail}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {showAccessLogs && accessLogs.length === 0 && (
+              <p className="text-xs text-muted-foreground">No access logs yet.</p>
+            )}
           </div>
         )}
 

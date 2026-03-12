@@ -9,8 +9,10 @@ import { useState, useEffect, useCallback } from "react";
 import {
   portalApi,
   getPortalToken,
+  setPortalToken,
   clearPortalToken,
   type PortalPublicConfig,
+  type PortalSSOUserInfo,
 } from "@/api/portalApi";
 
 export interface PortalAuthState {
@@ -18,6 +20,7 @@ export interface PortalAuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
   error: string | null;
+  ssoUser: PortalSSOUserInfo | null;
   login: (code: string) => Promise<void>;
   logout: () => void;
 }
@@ -27,12 +30,24 @@ export function usePortalAuth(): PortalAuthState {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ssoUser, setSsoUser] = useState<PortalSSOUserInfo | null>(null);
 
   // Load portal config on mount
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        // Check for SSO callback token in URL fragment
+        const hash = window.location.hash;
+        if (hash.includes("sso_token=")) {
+          const token = hash.split("sso_token=")[1]?.split("&")[0];
+          if (token) {
+            setPortalToken(token);
+            // Clean up URL fragment
+            window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          }
+        }
+
         const cfg = await portalApi.getConfig();
         if (cancelled) return;
         setConfig(cfg);
@@ -46,6 +61,18 @@ export function usePortalAuth(): PortalAuthState {
           try {
             await portalApi.getDatasets();
             if (!cancelled) setIsAuthenticated(true);
+          } catch {
+            clearPortalToken();
+          }
+        }
+        // SSO tier: check if we have a valid token (from callback or session)
+        else if (cfg.tier === "sso" && getPortalToken()) {
+          try {
+            const userInfo = await portalApi.getSSOUserInfo();
+            if (!cancelled) {
+              setIsAuthenticated(true);
+              setSsoUser(userInfo);
+            }
           } catch {
             clearPortalToken();
           }
@@ -75,10 +102,24 @@ export function usePortalAuth(): PortalAuthState {
     }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // For SSO, call the logout endpoint
+    if (config?.tier === "sso" && getPortalToken()) {
+      try {
+        const res = await portalApi.ssoLogout();
+        // Optionally redirect to IdP logout
+        if (res.end_session_url) {
+          window.location.href = res.end_session_url;
+          return;
+        }
+      } catch {
+        // Clear locally even if server logout fails
+      }
+    }
     clearPortalToken();
     setIsAuthenticated(false);
-  }, []);
+    setSsoUser(null);
+  }, [config]);
 
-  return { config, isLoading, isAuthenticated, error, login, logout };
+  return { config, isLoading, isAuthenticated, error, ssoUser, login, logout };
 }
