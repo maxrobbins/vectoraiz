@@ -38,15 +38,52 @@ def mock_client():
 
 class TestStartupUnprovisioned:
     @pytest.mark.asyncio
-    async def test_unprovisioned_does_nothing(self, mock_store, mock_client):
+    async def test_unprovisioned_standalone_does_nothing(self, mock_store, mock_client):
+        """In standalone mode, auto-provision is skipped."""
         mock_store.state.state = UNPROVISIONED
         mgr = ActivationManager(store=mock_store, client=mock_client)
 
-        await mgr.startup()
+        with patch("app.services.activation_manager.settings") as mock_settings:
+            mock_settings.mode = "standalone"
+            mock_settings.app_version = "dev"
+            await mgr.startup()
         await mgr.shutdown()
 
         mock_client.activate.assert_not_called()
         mock_client.refresh.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unprovisioned_connected_auto_provisions(self, mock_store, mock_client):
+        """In connected mode, auto-provision is attempted."""
+        mock_store.state.state = UNPROVISIONED
+        mgr = ActivationManager(store=mock_store, client=mock_client)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {
+            "serial": "VZ-auto1234-auto5678",
+            "bootstrap_token": "vzbt_auto",
+        }
+
+        mock_http_client = AsyncMock()
+        mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
+        mock_http_client.__aexit__ = AsyncMock(return_value=False)
+        mock_http_client.post = AsyncMock(return_value=mock_response)
+
+        mock_client.activate = AsyncMock(return_value=ActivateResult(
+            success=True, install_token="vzit_auto", status_code=200,
+        ))
+
+        with patch("app.services.activation_manager.settings") as mock_settings, \
+             patch("httpx.AsyncClient", return_value=mock_http_client):
+            mock_settings.mode = "connected"
+            mock_settings.aimarket_url = "https://ai-market-backend-production.up.railway.app"
+            mock_settings.app_version = "dev"
+            await mgr.startup()
+        await mgr.shutdown()
+
+        assert mock_store.state.serial == "VZ-auto1234-auto5678"
+        assert mock_store.state.state == ACTIVE
 
 
 class TestStartupProvisioned:

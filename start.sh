@@ -214,22 +214,15 @@ if [ ! -f ".env" ]; then
     info "First run detected — generating configuration..."
     POSTGRES_PW=$(openssl rand -hex 16)
 
-    # Check for API key (beta/connected mode)
-    API_KEY="${VECTORAIZ_API_KEY:-}"
-    if [ -z "$API_KEY" ]; then
-        echo ""
-        echo -e "  ${CYAN}${BOLD}allAI Setup${NC}"
-        echo -e "  ${DIM}If you have a vectorAIz API key (from your beta invite),${NC}"
-        echo -e "  ${DIM}enter it now to enable allAI — your AI data assistant.${NC}"
-        echo -e "  ${DIM}Press Enter to skip (you can add it later in .env).${NC}"
-        echo ""
-        printf "  API Key: "
-        read -r API_KEY
-        echo ""
-    fi
+    # Check for API key (backward compat — if provided via env, use it)
+    API_KEY="${VECTORAIZ_API_KEY:-${VECTORAIZ_INTERNAL_API_KEY:-}}"
 
-    if [ -n "$API_KEY" ]; then
-        cat > .env <<EOF
+    echo ""
+    echo -e "  ${CYAN}${BOLD}allAI Setup${NC}"
+    echo -e "  allAI will be configured automatically on first launch."
+    echo ""
+
+    cat > .env <<EOF
 # vectorAIz Configuration
 # Generated on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
@@ -243,29 +236,13 @@ VECTORAIZ_PORT=${PORT}
 VECTORAIZ_MODE=connected
 VECTORAIZ_AI_MARKET_URL=https://ai-market-backend-production.up.railway.app
 VECTORAIZ_ALLIE_PROVIDER=aimarket
-VECTORAIZ_INTERNAL_API_KEY=${API_KEY}
 EOF
-        success "Generated .env with allAI enabled"
+
+    if [ -n "$API_KEY" ]; then
+        echo "VECTORAIZ_INTERNAL_API_KEY=${API_KEY}" >> .env
+        success "Generated .env with allAI enabled (API key provided)"
     else
-        cat > .env <<EOF
-# vectorAIz Configuration
-# Generated on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-
-# Database password (auto-generated, keep this safe)
-POSTGRES_PASSWORD=${POSTGRES_PW}
-
-# Port to serve on
-VECTORAIZ_PORT=${PORT}
-
-VECTORAIZ_MODE=standalone
-
-# To enable allAI, uncomment and add your API key:
-# VECTORAIZ_MODE=connected
-# VECTORAIZ_AI_MARKET_URL=https://ai-market-backend-production.up.railway.app
-# VECTORAIZ_ALLIE_PROVIDER=aimarket
-# VECTORAIZ_INTERNAL_API_KEY=your_key_here
-EOF
-        success "Generated .env (standalone — add API key to .env to enable allAI)"
+        success "Generated .env with allAI enabled (serial auto-provisioning)"
     fi
 else
     if grep -q "^VECTORAIZ_PORT=" .env 2>/dev/null; then

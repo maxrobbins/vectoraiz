@@ -60,15 +60,16 @@ class ActivationManager:
         state = self._store.state
 
         if state.state == UNPROVISIONED:
-            # If serial + bootstrap_token exist (e.g. loaded from env vars)
-            # but state wasn't set correctly, auto-transition to PROVISIONED.
             if state.serial and state.bootstrap_token:
                 logger.info("Serial: UNPROVISIONED but serial+bootstrap_token present — transitioning to PROVISIONED")
                 self._store.state.state = PROVISIONED
                 self._store.save()
             else:
-                logger.info("Serial: UNPROVISIONED — waiting for serial to be provided")
-                return
+                # Auto-provision in connected mode
+                await self._auto_provision()
+                if self._store.state.state == UNPROVISIONED:
+                    # Auto-provision didn't work — start background loop which will retry
+                    logger.info("Serial: UNPROVISIONED — will retry auto-provision in background")
 
         if state.state == MIGRATED:
             logger.info("Serial: MIGRATED — using BQ-073 ledger metering")
@@ -99,6 +100,41 @@ class ActivationManager:
                 await self._background_task
             except asyncio.CancelledError:
                 pass
+
+    async def _auto_provision(self) -> None:
+        """Auto-generate a serial from ai.market on first boot."""
+        if settings.mode == "standalone":
+            return  # Don't auto-provision in standalone mode
+
+        logger.info("Auto-provisioning serial from ai.market...")
+        base_url = settings.aimarket_url.rstrip("/") if settings.aimarket_url else "https://ai-market-backend-production.up.railway.app"
+        url = f"{base_url}/api/v1/serials/generate"
+
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
+                resp = await client.post(url, json={
+                    "source": "auto_provision",
+                })
+                if resp.status_code == 201:
+                    data = resp.json()
+                    serial = data["serial"]
+                    bootstrap_token = data["bootstrap_token"]
+
+                    # Store and transition to PROVISIONED
+                    self._store.state.serial = serial
+                    self._store.state.bootstrap_token = bootstrap_token
+                    self._store.state.state = PROVISIONED
+                    self._store.save()
+
+                    logger.info("Auto-provisioned serial: %s — transitioning to PROVISIONED", serial[:16])
+
+                    # Immediately attempt activation
+                    await self._attempt_activation()
+                else:
+                    logger.warning("Auto-provision failed: HTTP %d — %s", resp.status_code, resp.text[:200])
+        except Exception as e:
+            logger.warning("Auto-provision failed (network): %s — will retry in background", e)
 
     async def _attempt_activation(self) -> None:
         """Try to activate with bootstrap token."""
@@ -204,8 +240,9 @@ class ActivationManager:
                         # No serial ops needed
                         await asyncio.sleep(STATUS_POLL_INTERVAL)
                     else:
-                        # UNPROVISIONED — wait for external trigger
-                        await asyncio.sleep(STATUS_POLL_INTERVAL)
+                        # UNPROVISIONED — try auto-provision
+                        await self._auto_provision()
+                        await asyncio.sleep(ACTIVATION_RETRY_INTERVAL)
                 except asyncio.CancelledError:
                     raise
                 except Exception:
