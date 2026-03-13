@@ -18,7 +18,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.customer
-    image: ghcr.io/aidotmarket/vectoraiz:${VECTORAIZ_VERSION:-v1.20.35-rc.1}
+    image: ghcr.io/aidotmarket/vectoraiz:${VECTORAIZ_VERSION:-v1.20.35-rc.2}
     ports:
       - "${VECTORAIZ_PORT:-8080}:80"
     volumes:
@@ -29,7 +29,7 @@ services:
       # Remove this line if you don't want the container to have Docker access
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - VECTORAIZ_VERSION=${VECTORAIZ_VERSION:-v1.20.35-rc.1}
+      - VECTORAIZ_VERSION=${VECTORAIZ_VERSION:-v1.20.35-rc.2}
       - VECTORAIZ_MODE=${VECTORAIZ_MODE:-standalone}
       - VECTORAIZ_SECRET_KEY=${VECTORAIZ_SECRET_KEY:-}
       - VECTORAIZ_APIKEY_HMAC_SECRET=${VECTORAIZ_APIKEY_HMAC_SECRET:-}
