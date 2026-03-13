@@ -73,6 +73,12 @@ export interface TableInfo {
   estimated_rows: number;
 }
 
+export interface SchemaResponse {
+  tables: TableInfo[];
+  partial: boolean;
+  warning?: string;
+}
+
 export interface ExtractRequest {
   tables?: { table: string; schema?: string; row_limit?: number }[];
   custom_sql?: string;
@@ -83,6 +89,18 @@ export interface ExtractResponse {
   status: string;
   dataset_ids: string[];
   message: string;
+}
+
+export interface DirectQueryRequest {
+  sql: string;
+  limit?: number;
+}
+
+export interface DirectQueryResponse {
+  columns: string[];
+  rows: (string | number | boolean | null)[][];
+  row_count: number;
+  truncated: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,12 +170,19 @@ export const databaseApi = {
   // Schema introspection
   schema: (id: string, schema?: string) => {
     const params = schema ? `?schema=${encodeURIComponent(schema)}` : "";
-    return dbFetch<TableInfo[]>(`/connections/${id}/schema${params}`);
+    return dbFetch<SchemaResponse>(`/connections/${id}/schema${params}`);
   },
 
   // Extract tables
   extract: (id: string, data: ExtractRequest) =>
     dbFetch<ExtractResponse>(`/connections/${id}/extract`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // Direct query against connected database (read-only)
+  query: (id: string, data: DirectQueryRequest) =>
+    dbFetch<DirectQueryResponse>(`/connections/${id}/query`, {
       method: "POST",
       body: JSON.stringify(data),
     }),

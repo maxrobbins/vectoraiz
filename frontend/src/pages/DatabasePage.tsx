@@ -236,8 +236,11 @@ const DatabasePage = () => {
     setSchemaLoading(true);
 
     try {
-      const data = await databaseApi.schema(connectionId);
-      setTables(data);
+      const resp = await databaseApi.schema(connectionId);
+      setTables(resp.tables);
+      if (resp.warning) {
+        setSchemaError(resp.warning);
+      }
     } catch (e) {
       setSchemaError(e instanceof Error ? e.message : "Failed to load schema");
     } finally {

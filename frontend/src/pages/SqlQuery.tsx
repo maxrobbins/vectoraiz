@@ -64,6 +64,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { useSQLQuery, useSQLTables, useDatasets, useDataset } from "@/hooks/useApi";
+import { databaseApi, DatabaseConnection, DirectQueryResponse } from "@/api/database";
 
 // Saved query type
 interface SavedQuery {
@@ -120,11 +121,17 @@ const mapApiTypeToDisplayType = (apiType: string | undefined): DataType => {
   return "string";
 };
 
+type QuerySource = "dataset" | "connection";
+
 const SqlQuery = () => {
   const [searchParams] = useSearchParams();
   const datasetIdParam = searchParams.get("dataset");
-  
+
+  const [querySource, setQuerySource] = useState<QuerySource>(datasetIdParam ? "dataset" : "dataset");
   const [selectedDataset, setSelectedDataset] = useState<string>(datasetIdParam || "");
+  const [selectedConnection, setSelectedConnection] = useState<string>("");
+  const [dbConnections, setDbConnections] = useState<DatabaseConnection[]>([]);
+  const [connectionsLoading, setConnectionsLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [query, setQuery] = useState("SELECT * FROM dataset LIMIT 10");
   const [activeTab, setActiveTab] = useState("results");
@@ -135,7 +142,13 @@ const SqlQuery = () => {
   const [schemaExpanded, setSchemaExpanded] = useState(true);
   const [savedQueriesExpanded, setSavedQueriesExpanded] = useState(true);
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>(loadSavedQueries);
-  
+
+  // Direct query state (for connection mode)
+  const [directResults, setDirectResults] = useState<DirectQueryResponse | null>(null);
+  const [directLoading, setDirectLoading] = useState(false);
+  const [directError, setDirectError] = useState<string | null>(null);
+  const [directDuration, setDirectDuration] = useState<number | null>(null);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // API hooks
@@ -143,6 +156,15 @@ const SqlQuery = () => {
   const { data: tablesData } = useSQLTables();
   const { data: datasetsData, loading: datasetsLoading } = useDatasets();
   const { data: selectedDatasetData, loading: schemaLoading } = useDataset(selectedDataset);
+
+  // Load database connections
+  useEffect(() => {
+    setConnectionsLoading(true);
+    databaseApi.list()
+      .then(conns => setDbConnections(conns))
+      .catch(() => {}) // Silently fail — connections are optional
+      .finally(() => setConnectionsLoading(false));
+  }, []);
 
   // Get datasets list from API
   const datasets = datasetsData?.datasets
@@ -159,19 +181,11 @@ const SqlQuery = () => {
   useEffect(() => {
     if (datasetIdParam && datasets.find(d => d.id === datasetIdParam)) {
       setSelectedDataset(datasetIdParam);
+      setQuerySource("dataset");
     }
   }, [datasetIdParam, datasets]);
 
   const executeQuery = useCallback(async () => {
-    if (!selectedDataset) {
-      toast({
-        title: "No dataset selected",
-        description: "Please select a dataset before running a query.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     if (!query.trim()) {
       toast({
         title: "Empty query",
@@ -181,13 +195,49 @@ const SqlQuery = () => {
       return;
     }
 
-    const result = await execute(query, { dataset_id: selectedDataset });
-    if (result) {
-      setActiveTab("results");
+    if (querySource === "connection") {
+      if (!selectedConnection) {
+        toast({
+          title: "No database selected",
+          description: "Please select a database connection before running a query.",
+          variant: "destructive",
+        });
+        return;
+      }
+      // Direct query against connected database
+      setDirectLoading(true);
+      setDirectError(null);
+      setDirectResults(null);
+      const start = performance.now();
+      try {
+        const result = await databaseApi.query(selectedConnection, { sql: query });
+        setDirectDuration(performance.now() - start);
+        setDirectResults(result);
+        setActiveTab("results");
+      } catch (err: any) {
+        setDirectDuration(performance.now() - start);
+        setDirectError(err.message || "Query failed");
+        setActiveTab("messages");
+      } finally {
+        setDirectLoading(false);
+      }
     } else {
-      setActiveTab("messages");
+      if (!selectedDataset) {
+        toast({
+          title: "No dataset selected",
+          description: "Please select a dataset before running a query.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const result = await execute(query, { dataset_id: selectedDataset });
+      if (result) {
+        setActiveTab("results");
+      } else {
+        setActiveTab("messages");
+      }
     }
-  }, [query, selectedDataset, execute]);
+  }, [query, querySource, selectedConnection, selectedDataset, execute]);
 
   // Keyboard shortcut handler
   useEffect(() => {
@@ -354,10 +404,22 @@ const SqlQuery = () => {
     }
   };
 
-  // Derive results and execution info from API response
-  const results = apiResults?.data || null;
-  const executionTime = apiResults?.duration_ms ? (apiResults.duration_ms / 1000).toFixed(2) : null;
-  const errorMessage = sqlError || null;
+  // Derive results and execution info from API response (unified across modes)
+  const isRunning = querySource === "connection" ? directLoading : isExecuting;
+
+  const results = querySource === "connection"
+    ? (directResults ? directResults.rows.map(row => {
+        const obj: Record<string, any> = {};
+        directResults.columns.forEach((col, i) => { obj[col] = row[i]; });
+        return obj;
+      }) : null)
+    : (apiResults?.data || null);
+
+  const executionTime = querySource === "connection"
+    ? (directDuration ? (directDuration / 1000).toFixed(2) : null)
+    : (apiResults?.duration_ms ? (apiResults.duration_ms / 1000).toFixed(2) : null);
+
+  const errorMessage = querySource === "connection" ? directError : (sqlError || null);
 
   const sortedResults = results ? [...results].sort((a, b) => {
     if (!sortColumn) return 0;
@@ -425,31 +487,75 @@ const SqlQuery = () => {
 
         {!sidebarCollapsed && (
           <div className="flex-1 overflow-y-auto p-3 space-y-4">
-            {/* Dataset Selector */}
+            {/* Source Mode Selector */}
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground uppercase tracking-wider">Dataset</Label>
-              {datasetsLoading ? (
-                <Skeleton className="h-10 w-full" />
-              ) : datasets.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No datasets available</p>
-              ) : (
-                <Select value={selectedDataset} onValueChange={setSelectedDataset}>
-                  <SelectTrigger className="bg-background border-border">
-                    <SelectValue placeholder="Select dataset" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {datasets.map((dataset) => (
-                      <SelectItem key={dataset.id} value={dataset.id}>
-                        {dataset.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider">Source</Label>
+              <Select value={querySource} onValueChange={(v) => setQuerySource(v as QuerySource)}>
+                <SelectTrigger className="bg-background border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dataset">Local Datasets</SelectItem>
+                  <SelectItem value="connection">Database Connections</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
-            {/* Schema Browser */}
-            {selectedDataset && (
+            {/* Dataset Selector (dataset mode) */}
+            {querySource === "dataset" && (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider">Dataset</Label>
+                {datasetsLoading ? (
+                  <Skeleton className="h-10 w-full" />
+                ) : datasets.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No datasets available</p>
+                ) : (
+                  <Select value={selectedDataset} onValueChange={setSelectedDataset}>
+                    <SelectTrigger className="bg-background border-border">
+                      <SelectValue placeholder="Select dataset" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {datasets.map((dataset) => (
+                        <SelectItem key={dataset.id} value={dataset.id}>
+                          {dataset.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+            {/* Database Connection Selector (connection mode) */}
+            {querySource === "connection" && (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider">Connection</Label>
+                {connectionsLoading ? (
+                  <Skeleton className="h-10 w-full" />
+                ) : dbConnections.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No database connections configured. Add one in the Database page.</p>
+                ) : (
+                  <Select value={selectedConnection} onValueChange={setSelectedConnection}>
+                    <SelectTrigger className="bg-background border-border">
+                      <SelectValue placeholder="Select connection" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {dbConnections.map((conn) => (
+                        <SelectItem key={conn.id} value={conn.id}>
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${conn.status === "connected" ? "bg-green-500" : conn.status === "error" ? "bg-red-500" : "bg-yellow-500"}`} />
+                            {conn.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+            {/* Schema Browser (dataset mode only) */}
+            {querySource === "dataset" && selectedDataset && (
               <div className="space-y-2">
                 <button
                   onClick={() => setSchemaExpanded(!schemaExpanded)}
@@ -543,11 +649,11 @@ const SqlQuery = () => {
           <div className="flex items-center gap-2">
             <Button
               onClick={executeQuery}
-              disabled={isExecuting || !selectedDataset}
+              disabled={isRunning || (querySource === "dataset" ? !selectedDataset : !selectedConnection)}
               className="gap-2 bg-[hsl(var(--haven-success))] hover:bg-[hsl(var(--haven-success))]/90"
             >
-              {isExecuting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-              {isExecuting ? "Executing..." : "Run"}
+              {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              {isRunning ? "Executing..." : "Run"}
             </Button>
             <Button variant="outline" onClick={formatQuery} className="gap-2">
               <Code className="w-4 h-4" />
@@ -670,9 +776,12 @@ const SqlQuery = () => {
                   </div>
                   <div className="text-sm text-muted-foreground">
                     Showing {sortedResults.length} rows (query executed in {executionTime}s)
+                    {querySource === "connection" && directResults?.truncated && (
+                      <span className="text-yellow-500 ml-2">— Results truncated at {directResults.row_count} rows</span>
+                    )}
                   </div>
                 </div>
-              ) : isExecuting ? (
+              ) : isRunning ? (
                 <div className="flex items-center justify-center h-32">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
                 </div>

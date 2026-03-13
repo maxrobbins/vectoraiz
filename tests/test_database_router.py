@@ -204,9 +204,10 @@ class TestIntrospection:
         resp = client.get(f"/api/v1/db/connections/{conn_id}/schema")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "users"
-        assert data[0]["estimated_rows"] == 1000
+        assert data["partial"] is False
+        assert len(data["tables"]) == 1
+        assert data["tables"][0]["name"] == "users"
+        assert data["tables"][0]["estimated_rows"] == 1000
 
 
 # =====================================================================
@@ -330,8 +331,8 @@ class TestSelfReferentialExtraction:
         # Introspect — should find at least dataset_records table
         schema_resp = client.get(f"/api/v1/db/connections/{conn_id}/schema")
         assert schema_resp.status_code == 200
-        tables = schema_resp.json()
-        table_names = [t["name"] for t in tables]
+        data = schema_resp.json()
+        table_names = [t["name"] for t in data["tables"]]
         assert "dataset_records" in table_names
 
     def test_self_extract_and_pipeline(self):

@@ -9,6 +9,7 @@ Phase: BQ-VZ-DB-CONNECT
 Created: 2026-02-25
 """
 
+import asyncio
 import json
 import logging
 import uuid
@@ -252,12 +253,28 @@ async def test_connection(connection_id: str) -> Dict[str, Any]:
 async def introspect_schema(
     connection_id: str,
     schema: Optional[str] = Query(default=None, description="Schema name (default: public for Postgres)"),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     conn = _get_connection(connection_id)
     connector = get_db_connector()
 
+    timed_out = False
     try:
-        tables = connector.introspect_schema(conn, schema=schema)
+        tables = await asyncio.wait_for(
+            asyncio.to_thread(connector.introspect_schema, conn, schema),
+            timeout=15.0,
+        )
+    except asyncio.TimeoutError:
+        # Timeout: return whatever partial results the connector gathered
+        # The connector builds a list incrementally, so re-fetch table names
+        # and return them without column details as a fallback.
+        timed_out = True
+        try:
+            tables = await asyncio.wait_for(
+                asyncio.to_thread(_partial_introspect, connector, conn, schema),
+                timeout=5.0,
+            )
+        except Exception:
+            tables = []
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Schema introspection failed: {e}")
 
@@ -270,7 +287,86 @@ async def introspect_schema(
             session.add(db_conn)
             session.commit()
 
-    return [t.to_dict() for t in tables]
+    result: Dict[str, Any] = {
+        "tables": [t.to_dict() for t in tables],
+        "partial": timed_out,
+    }
+    if timed_out:
+        result["warning"] = "Schema introspection timed out after 15s. Partial results returned."
+    return result
+
+
+def _partial_introspect(connector, conn, schema):
+    """Return table names only (no column detail) as a fast fallback."""
+    from app.services.db_connector import TableInfo
+    from sqlalchemy import inspect as sa_inspect
+
+    engine = connector.get_engine(conn)
+    insp = sa_inspect(engine)
+    resolved = schema or ("public" if conn.db_type == "postgresql" else None)
+    try:
+        table_names = insp.get_table_names(schema=resolved)
+    except Exception:
+        return []
+    return [
+        TableInfo(name=t, schema=resolved or "", columns=[], estimated_rows=0)
+        for t in table_names
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Direct query on connected database
+# ---------------------------------------------------------------------------
+
+class DirectQueryRequest(BaseModel):
+    sql: str = Field(..., min_length=1, max_length=10000)
+    limit: int = Field(default=1000, ge=1, le=10000)
+
+
+@router.post("/connections/{connection_id}/query", summary="Run read-only SQL against connected database")
+async def direct_query(connection_id: str, body: DirectQueryRequest) -> Dict[str, Any]:
+    conn = _get_connection(connection_id)
+    connector = get_db_connector()
+
+    # Validate SQL is read-only
+    from app.services.db_connector import DatabaseConnector
+    try:
+        DatabaseConnector.validate_readonly_sql(body.sql)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Apply LIMIT wrapper
+    sql_with_limit = f"SELECT * FROM ({body.sql}) _q LIMIT {body.limit}"
+
+    def _execute():
+        engine = connector.get_engine(conn)
+        from sqlalchemy import text
+        with engine.connect() as db_conn:
+            result = db_conn.execute(text(sql_with_limit))
+            columns = list(result.keys())
+            rows = [list(row) for row in result.fetchall()]
+            return columns, rows
+
+    try:
+        columns, rows = await asyncio.wait_for(
+            asyncio.to_thread(_execute),
+            timeout=30.0,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Query timed out after 30 seconds")
+    except Exception as e:
+        error_msg = str(e)
+        # Don't leak internal connection details
+        if "password" in error_msg.lower() or "connection" in error_msg.lower():
+            error_msg = "Query execution failed. Check your SQL syntax and database connection."
+        raise HTTPException(status_code=502, detail=error_msg)
+
+    return {
+        "columns": columns,
+        "rows": rows,
+        "row_count": len(rows),
+        "truncated": len(rows) >= body.limit,
+    }
 
 
 # ---------------------------------------------------------------------------
