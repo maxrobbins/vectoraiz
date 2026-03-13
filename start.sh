@@ -219,8 +219,18 @@ if [ ! -f ".env" ]; then
 
     echo ""
     echo -e "  ${CYAN}${BOLD}allAI Setup${NC}"
-    echo -e "  allAI will be configured automatically on first launch."
+    echo -e "  ${DIM}allAI is an AI-powered data assistant included with vectorAIz.${NC}"
+    echo -e "  ${DIM}It includes \$4 of free credits — no API key needed.${NC}"
     echo ""
+    printf "  Enable allAI? [Y/n]: "
+    read -r ALLAI_CHOICE < /dev/tty
+    echo ""
+
+    if [[ "$ALLAI_CHOICE" =~ ^[Nn]$ ]]; then
+        VECTORAIZ_MODE_VALUE="standalone"
+    else
+        VECTORAIZ_MODE_VALUE="connected"
+    fi
 
     cat > .env <<EOF
 # vectorAIz Configuration
@@ -232,17 +242,25 @@ POSTGRES_PASSWORD=${POSTGRES_PW}
 # Port to serve on
 VECTORAIZ_PORT=${PORT}
 
-# allAI enabled (connected mode)
-VECTORAIZ_MODE=connected
+# Mode
+VECTORAIZ_MODE=${VECTORAIZ_MODE_VALUE}
+EOF
+
+    if [ "$VECTORAIZ_MODE_VALUE" = "connected" ]; then
+        cat >> .env <<EOF
 VECTORAIZ_AI_MARKET_URL=https://ai-market-backend-production.up.railway.app
 VECTORAIZ_ALLIE_PROVIDER=aimarket
 EOF
+    fi
 
     if [ -n "$API_KEY" ]; then
         echo "VECTORAIZ_INTERNAL_API_KEY=${API_KEY}" >> .env
-        success "Generated .env with allAI enabled (API key provided)"
+    fi
+
+    if [ "$VECTORAIZ_MODE_VALUE" = "connected" ]; then
+        success "Generated .env with allAI enabled"
     else
-        success "Generated .env with allAI enabled (serial auto-provisioning)"
+        success "Generated .env in standalone mode (no allAI)"
     fi
 else
     if grep -q "^VECTORAIZ_PORT=" .env 2>/dev/null; then
