@@ -271,7 +271,7 @@ async def introspect_schema(
         try:
             tables = await asyncio.wait_for(
                 asyncio.to_thread(_partial_introspect, connector, conn, schema),
-                timeout=5.0,
+                timeout=10.0,
             )
         except Exception:
             tables = []

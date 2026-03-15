@@ -271,6 +271,162 @@ class TestCredentialEncryption:
 # Singleton
 # =====================================================================
 
+# =====================================================================
+# Bulk introspection tests
+# =====================================================================
+
+class TestBulkIntrospection:
+    """Verify bulk introspection returns the same structure as per-table."""
+
+    def _make_mock_connection(self, db_type="postgresql"):
+        conn = MagicMock()
+        conn.id = "test-conn-1"
+        conn.db_type = db_type
+        conn.host = "localhost"
+        conn.port = 5432 if db_type == "postgresql" else 3306
+        conn.database = "testdb"
+        conn.username = "user"
+        conn.password_encrypted = "encrypted"
+        conn.ssl_mode = "prefer"
+        return conn
+
+    @patch.object(DatabaseConnector, "get_engine")
+    def test_bulk_pg_returns_table_info_list(self, mock_get_engine):
+        """Bulk PG introspection returns List[TableInfo] with correct structure."""
+        mock_conn_obj = MagicMock()
+        mock_get_engine.return_value = MagicMock()
+
+        # Mock the connection context manager and execute calls
+        mock_db_conn = MagicMock()
+        mock_get_engine.return_value.connect.return_value.__enter__ = MagicMock(return_value=mock_db_conn)
+        mock_get_engine.return_value.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        # Setup execute results for the 3 bulk queries
+        columns_result = [
+            ("users", "id", "integer", "NO"),
+            ("users", "name", "character varying", "YES"),
+            ("users", "email", "character varying", "NO"),
+            ("orders", "id", "integer", "NO"),
+            ("orders", "user_id", "integer", "YES"),
+            ("orders", "total", "numeric", "YES"),
+        ]
+        pk_result = [
+            ("users", "id"),
+            ("orders", "id"),
+        ]
+        count_result = [
+            ("users", 1500),
+            ("orders", 42000),
+        ]
+
+        mock_db_conn.execute.return_value.fetchall.side_effect = [
+            columns_result, pk_result, count_result
+        ]
+
+        connector = DatabaseConnector()
+        connection = self._make_mock_connection("postgresql")
+        tables = connector._bulk_introspect_pg(connection, "public")
+
+        assert len(tables) == 2
+        table_names = {t.name for t in tables}
+        assert table_names == {"users", "orders"}
+
+        # Verify structure matches to_dict() contract
+        for t in tables:
+            d = t.to_dict()
+            assert "name" in d
+            assert "schema" in d
+            assert "columns" in d
+            assert "primary_key" in d
+            assert "estimated_rows" in d
+            assert d["schema"] == "public"
+            # Columns should have name, type, nullable
+            for col in d["columns"]:
+                assert "name" in col
+                assert "type" in col
+                assert "nullable" in col
+
+        # Check specific table
+        users = next(t for t in tables if t.name == "users")
+        assert len(users.columns) == 3
+        assert users.estimated_rows == 1500
+        assert users.primary_key == {"constrained_columns": ["id"]}
+
+        orders = next(t for t in tables if t.name == "orders")
+        assert len(orders.columns) == 3
+        assert orders.estimated_rows == 42000
+
+    @patch.object(DatabaseConnector, "get_engine")
+    def test_bulk_mysql_returns_table_info_list(self, mock_get_engine):
+        """Bulk MySQL introspection returns List[TableInfo] with correct structure."""
+        mock_db_conn = MagicMock()
+        mock_get_engine.return_value.connect.return_value.__enter__ = MagicMock(return_value=mock_db_conn)
+        mock_get_engine.return_value.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        # First execute is SELECT DATABASE()
+        mock_db_conn.execute.return_value.scalar.return_value = "testdb"
+
+        columns_result = [
+            ("products", "id", "int", "NO"),
+            ("products", "name", "varchar", "YES"),
+        ]
+        pk_result = [("products", "id")]
+        count_result = [("products", 500)]
+
+        mock_db_conn.execute.return_value.fetchall.side_effect = [
+            columns_result, pk_result, count_result
+        ]
+
+        connector = DatabaseConnector()
+        connection = self._make_mock_connection("mysql")
+        tables = connector._bulk_introspect_mysql(connection, None)
+
+        assert len(tables) == 1
+        assert tables[0].name == "products"
+        assert tables[0].estimated_rows == 500
+        d = tables[0].to_dict()
+        assert len(d["columns"]) == 2
+        assert d["columns"][0]["name"] == "id"
+        assert d["columns"][0]["nullable"] is False
+
+    @patch.object(DatabaseConnector, "_per_table_introspect")
+    @patch.object(DatabaseConnector, "_bulk_introspect_pg")
+    @patch.object(DatabaseConnector, "get_engine")
+    def test_fallback_to_per_table_on_bulk_failure(self, mock_engine, mock_bulk, mock_per_table):
+        """If bulk introspection fails, fall back to per-table approach."""
+        mock_bulk.side_effect = Exception("bulk query failed")
+        mock_per_table.return_value = []
+
+        connector = DatabaseConnector()
+        connection = self._make_mock_connection("postgresql")
+        result = connector.introspect_schema(connection, "public")
+
+        mock_per_table.assert_called_once_with(connection, "public")
+        assert result == []
+
+    @patch.object(DatabaseConnector, "get_engine")
+    def test_bulk_pg_table_without_pk(self, mock_get_engine):
+        """Tables without primary keys should have primary_key=None."""
+        mock_db_conn = MagicMock()
+        mock_get_engine.return_value.connect.return_value.__enter__ = MagicMock(return_value=mock_db_conn)
+        mock_get_engine.return_value.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        columns_result = [("logs", "message", "text", "YES")]
+        pk_result = []  # no PKs
+        count_result = [("logs", 100)]
+
+        mock_db_conn.execute.return_value.fetchall.side_effect = [
+            columns_result, pk_result, count_result
+        ]
+
+        connector = DatabaseConnector()
+        connection = self._make_mock_connection("postgresql")
+        tables = connector._bulk_introspect_pg(connection, "public")
+
+        assert len(tables) == 1
+        assert tables[0].primary_key is None
+
+
 class TestSingleton:
     def test_get_db_connector_returns_same_instance(self):
         c1 = get_db_connector()

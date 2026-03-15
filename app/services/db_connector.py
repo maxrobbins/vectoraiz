@@ -215,12 +215,29 @@ class DatabaseConnector:
     def introspect_schema(
         self, connection: DatabaseConnection, schema: Optional[str] = None
     ) -> List[TableInfo]:
-        """Return all tables with columns, types, and row count estimates."""
-        engine = self.get_engine(connection)
-        insp = inspect(engine)
+        """Return all tables with columns, types, and row count estimates.
 
+        Uses bulk SQL queries (3 total) instead of per-table inspector calls
+        to avoid N*3 round-trips on remote databases.
+        """
         if schema is None:
             schema = "public" if connection.db_type == "postgresql" else None
+
+        try:
+            if connection.db_type == "postgresql":
+                return self._bulk_introspect_pg(connection, schema or "public")
+            else:
+                return self._bulk_introspect_mysql(connection, schema)
+        except Exception as e:
+            logger.warning("Bulk introspection failed, falling back to per-table: %s", e)
+            return self._per_table_introspect(connection, schema)
+
+    def _per_table_introspect(
+        self, connection: DatabaseConnection, schema: Optional[str]
+    ) -> List[TableInfo]:
+        """Legacy per-table introspection as fallback."""
+        engine = self.get_engine(connection)
+        insp = inspect(engine)
 
         tables = []
         try:
@@ -245,6 +262,165 @@ class DatabaseConnector:
                 )
             except Exception as e:
                 logger.warning("Skipping table %s.%s: %s", schema, table_name, e)
+
+        return tables
+
+    def _bulk_introspect_pg(
+        self, connection: DatabaseConnection, schema: str
+    ) -> List[TableInfo]:
+        """Bulk introspection for PostgreSQL — 3 queries total."""
+        engine = self.get_engine(connection)
+        with engine.connect() as conn:
+            # 1. All columns
+            cols_rows = conn.execute(
+                text(
+                    "SELECT table_name, column_name, data_type, is_nullable "
+                    "FROM information_schema.columns "
+                    "WHERE table_schema = :schema "
+                    "ORDER BY table_name, ordinal_position"
+                ),
+                {"schema": schema},
+            ).fetchall()
+
+            # 2. All primary keys
+            pk_rows = conn.execute(
+                text(
+                    "SELECT tc.table_name, kcu.column_name "
+                    "FROM information_schema.table_constraints tc "
+                    "JOIN information_schema.key_column_usage kcu "
+                    "  ON tc.constraint_name = kcu.constraint_name "
+                    "  AND tc.table_schema = kcu.table_schema "
+                    "WHERE tc.constraint_type = 'PRIMARY KEY' "
+                    "  AND tc.table_schema = :schema "
+                    "ORDER BY tc.table_name, kcu.ordinal_position"
+                ),
+                {"schema": schema},
+            ).fetchall()
+
+            # 3. All row count estimates
+            count_rows = conn.execute(
+                text(
+                    "SELECT c.relname, c.reltuples::bigint "
+                    "FROM pg_class c "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = :schema AND c.relkind = 'r'"
+                ),
+                {"schema": schema},
+            ).fetchall()
+
+        # Group columns by table
+        columns_by_table: Dict[str, List[Dict[str, Any]]] = {}
+        for table_name, col_name, data_type, is_nullable in cols_rows:
+            columns_by_table.setdefault(table_name, []).append({
+                "name": col_name,
+                "type": data_type,
+                "nullable": is_nullable == "YES",
+            })
+
+        # Group PKs by table
+        pks_by_table: Dict[str, List[str]] = {}
+        for table_name, col_name in pk_rows:
+            pks_by_table.setdefault(table_name, []).append(col_name)
+
+        # Row counts by table
+        counts_by_table = {name: max(int(count), 0) for name, count in count_rows}
+
+        # Build TableInfo list for all tables that have columns
+        tables = []
+        for table_name, columns in columns_by_table.items():
+            pk_cols = pks_by_table.get(table_name, [])
+            pk = {"constrained_columns": pk_cols} if pk_cols else None
+            tables.append(
+                TableInfo(
+                    name=table_name,
+                    schema=schema,
+                    columns=columns,
+                    primary_key=pk,
+                    estimated_rows=counts_by_table.get(table_name, 0),
+                )
+            )
+
+        return tables
+
+    def _bulk_introspect_mysql(
+        self, connection: DatabaseConnection, schema: Optional[str]
+    ) -> List[TableInfo]:
+        """Bulk introspection for MySQL — 3 queries total."""
+        engine = self.get_engine(connection)
+        with engine.connect() as conn:
+            # Resolve schema if not provided
+            resolved_schema = schema or conn.execute(text("SELECT DATABASE()")).scalar()
+
+            # 1. All columns
+            cols_rows = conn.execute(
+                text(
+                    "SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE "
+                    "FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = :schema "
+                    "ORDER BY TABLE_NAME, ORDINAL_POSITION"
+                ),
+                {"schema": resolved_schema},
+            ).fetchall()
+
+            # 2. All primary keys
+            pk_rows = conn.execute(
+                text(
+                    "SELECT tc.TABLE_NAME, kcu.COLUMN_NAME "
+                    "FROM information_schema.TABLE_CONSTRAINTS tc "
+                    "JOIN information_schema.KEY_COLUMN_USAGE kcu "
+                    "  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME "
+                    "  AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA "
+                    "  AND tc.TABLE_NAME = kcu.TABLE_NAME "
+                    "WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' "
+                    "  AND tc.TABLE_SCHEMA = :schema "
+                    "ORDER BY tc.TABLE_NAME, kcu.ORDINAL_POSITION"
+                ),
+                {"schema": resolved_schema},
+            ).fetchall()
+
+            # 3. All row count estimates
+            count_rows = conn.execute(
+                text(
+                    "SELECT TABLE_NAME, TABLE_ROWS "
+                    "FROM information_schema.TABLES "
+                    "WHERE TABLE_SCHEMA = :schema"
+                ),
+                {"schema": resolved_schema},
+            ).fetchall()
+
+        # Group columns by table
+        columns_by_table: Dict[str, List[Dict[str, Any]]] = {}
+        for table_name, col_name, data_type, is_nullable in cols_rows:
+            columns_by_table.setdefault(table_name, []).append({
+                "name": col_name,
+                "type": data_type,
+                "nullable": is_nullable == "YES",
+            })
+
+        # Group PKs by table
+        pks_by_table: Dict[str, List[str]] = {}
+        for table_name, col_name in pk_rows:
+            pks_by_table.setdefault(table_name, []).append(col_name)
+
+        # Row counts by table
+        counts_by_table = {
+            name: int(count) if count else 0 for name, count in count_rows
+        }
+
+        # Build TableInfo list
+        tables = []
+        for table_name, columns in columns_by_table.items():
+            pk_cols = pks_by_table.get(table_name, [])
+            pk = {"constrained_columns": pk_cols} if pk_cols else None
+            tables.append(
+                TableInfo(
+                    name=table_name,
+                    schema=resolved_schema or "",
+                    columns=columns,
+                    primary_key=pk,
+                    estimated_rows=counts_by_table.get(table_name, 0),
+                )
+            )
 
         return tables
 
