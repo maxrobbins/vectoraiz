@@ -101,7 +101,7 @@ class TestTokenCRUD:
         assert len(raw.split("_")) == 3
         assert token.label == "Test Token"
         assert token.id
-        assert len(token.scopes) == 4
+        assert len(token.scopes) == 6
 
     def test_create_token_custom_scopes(self):
         raw, token = create_token(label="SQL Only", scopes=["ext:sql"])
