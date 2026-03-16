@@ -11,8 +11,14 @@ Created: S136
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Column, SQLModel, Text, Field as SQLField
+
+# Regex for safe dataset IDs — shared by all tools
+DATASET_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+DATASET_ID_MAX_LEN = 64
 
 
 # ---------------------------------------------------------------------------
@@ -29,8 +35,8 @@ class ConnectivityTokenRecord(SQLModel, table=True):
     hmac_hash: str = SQLField(max_length=255)
     secret_last4: str = SQLField(max_length=4)
     scopes: str = SQLField(
-        default='["ext:search","ext:sql","ext:schema","ext:datasets"]',
-        sa_column=Column(Text, default='["ext:search","ext:sql","ext:schema","ext:datasets"]'),
+        default='["ext:search","ext:sql","ext:schema","ext:datasets","ext:profile","ext:pii"]',
+        sa_column=Column(Text, default='["ext:search","ext:sql","ext:schema","ext:datasets","ext:profile","ext:pii"]'),
     )
     created_at: datetime = SQLField(default_factory=lambda: datetime.utcnow())
     expires_at: Optional[datetime] = SQLField(default=None, nullable=True)
@@ -61,6 +67,26 @@ class ConnectivityToken(BaseModel):
 # Request models
 # ---------------------------------------------------------------------------
 
+def validate_dataset_id(value: str) -> str:
+    """Validate a dataset_id: alphanumeric/dash/underscore, max 64 chars."""
+    if len(value) > DATASET_ID_MAX_LEN:
+        raise ValueError(f"dataset_id exceeds maximum length of {DATASET_ID_MAX_LEN}")
+    if not DATASET_ID_PATTERN.match(value):
+        raise ValueError("dataset_id contains invalid characters")
+    return value
+
+
+class DatasetIdInput(BaseModel):
+    """Validated dataset_id input — used by tools that accept a single dataset_id."""
+
+    dataset_id: str = Field(..., description="Dataset identifier")
+
+    @field_validator("dataset_id")
+    @classmethod
+    def check_dataset_id(cls, v: str) -> str:
+        return validate_dataset_id(v)
+
+
 class VectorSearchRequest(BaseModel):
     """Input for vectoraiz_search tool (§5.2)."""
 
@@ -68,12 +94,26 @@ class VectorSearchRequest(BaseModel):
     dataset_id: Optional[str] = Field(None, description="Optional: limit to specific dataset")
     top_k: int = Field(5, ge=1, le=20, description="Number of results (default 5)")
 
+    @field_validator("dataset_id")
+    @classmethod
+    def check_dataset_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v != "":
+            return validate_dataset_id(v)
+        return v
+
 
 class SQLQueryRequest(BaseModel):
     """Input for vectoraiz_sql tool (§5.2)."""
 
     sql: str = Field(..., max_length=4096, description="SQL SELECT query")
     dataset_id: Optional[str] = Field(None, description="Optional: scope to a specific dataset")
+
+    @field_validator("dataset_id")
+    @classmethod
+    def check_dataset_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v != "":
+            return validate_dataset_id(v)
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +157,35 @@ class SchemaResponse(BaseModel):
     table_name: str
     row_count: int
     columns: List[ColumnInfo]
+
+
+class ProfileColumnInfo(BaseModel):
+    """Column info in profile response."""
+
+    name: str
+    type: str
+    null_count: int = 0
+    null_rate: float = 0.0
+    sample_values: List[Any] = Field(default_factory=list)
+
+
+class ProfileResponse(BaseModel):
+    """Response for vectoraiz_profile_dataset."""
+
+    dataset_id: str
+    row_count: int
+    column_count: int
+    columns: List[ProfileColumnInfo]
+    sample_rows: List[List[Any]] = Field(default_factory=list)
+
+
+class PIIReportResponse(BaseModel):
+    """Response for vectoraiz_get_pii_report."""
+
+    dataset_id: str
+    status: str = "available"
+    message: Optional[str] = None
+    report: Optional[Dict[str, Any]] = None
 
 
 class SearchMatch(BaseModel):
@@ -205,4 +274,4 @@ ERROR_HTTP_STATUS: Dict[str, int] = {
 
 
 # All valid scopes
-VALID_SCOPES = {"ext:search", "ext:sql", "ext:schema", "ext:datasets"}
+VALID_SCOPES = {"ext:search", "ext:sql", "ext:schema", "ext:datasets", "ext:profile", "ext:pii"}

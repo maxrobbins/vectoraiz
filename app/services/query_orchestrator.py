@@ -26,6 +26,9 @@ from app.models.connectivity import (
     DatasetInfo,
     DatasetListResponse,
     HealthResponse,
+    PIIReportResponse,
+    ProfileColumnInfo,
+    ProfileResponse,
     SchemaResponse,
     SearchMatch,
     SearchResponse,
@@ -502,6 +505,170 @@ class QueryOrchestrator:
             raise ConnectivityError("internal_error", "Internal error executing SQL")
         finally:
             self.rate_limiter.release_concurrency(token.id)
+
+    # ------------------------------------------------------------------
+    # Tool: profile_dataset
+    # ------------------------------------------------------------------
+
+    async def profile_dataset(
+        self, token: ConnectivityToken, dataset_id: str, client_ip: str = "127.0.0.1"
+    ) -> ProfileResponse:
+        """Profile a dataset: row count, column types, null rates, sample rows."""
+        self._check_enabled()
+        self._enforce_scope(token, "ext:profile")
+        self._enforce_rate_limit(token, "profile_dataset", client_ip)
+
+        request_id = self._make_request_id()
+        start = time.time()
+
+        try:
+            self.rate_limiter.record_request(token.id, "profile_dataset")
+
+            record = self._get_queryable_dataset(dataset_id)
+
+            import json as _json
+            meta = _json.loads(record.metadata_json) if record.metadata_json else {}
+
+            from app.services.duckdb_service import ephemeral_duckdb_service
+            processed_path = Path(record.processed_path) if record.processed_path else None
+
+            columns = []
+            sample_rows = []
+            row_count = meta.get("row_count", 0)
+
+            if processed_path and processed_path.exists():
+                with ephemeral_duckdb_service() as duckdb_svc:
+                    # Get column profiles
+                    profiles = duckdb_svc.get_column_profile(processed_path, max_rows=100)
+                    for p in profiles:
+                        null_count = p.get("null_count", 0)
+                        total = p.get("total_count", row_count) or 1
+                        columns.append(ProfileColumnInfo(
+                            name=p["name"],
+                            type=p["type"],
+                            null_count=null_count,
+                            null_rate=round(null_count / total, 4) if total > 0 else 0.0,
+                            sample_values=[str(v) for v in p.get("sample_values", [])[:5]],
+                        ))
+
+                    # Get 5 sample rows
+                    try:
+                        from app.utils.sanitization import sql_quote_literal
+                        escaped = sql_quote_literal(str(processed_path))
+                        conn = duckdb_svc.create_ephemeral_connection(
+                            memory_limit="128MB", threads=1,
+                        )
+                        try:
+                            result = conn.execute(
+                                f"SELECT * FROM read_parquet('{escaped}') LIMIT 5"
+                            )
+                            raw_rows = result.fetchall()
+                            for row in raw_rows:
+                                sample_rows.append([
+                                    v if isinstance(v, (int, float, bool, str, type(None)))
+                                    else str(v) for v in row
+                                ])
+                        finally:
+                            conn.close()
+                    except Exception:
+                        pass  # sample rows are best-effort
+
+            duration_ms = int((time.time() - start) * 1000)
+            self.metrics.record_request("profile_dataset", duration_ms)
+            audit_log(
+                tool_name="profile_dataset", token_id=token.id,
+                dataset_id=dataset_id, duration_ms=duration_ms,
+                row_count=row_count, error_code=None, request_id=request_id,
+            )
+
+            return ProfileResponse(
+                dataset_id=dataset_id,
+                row_count=row_count,
+                column_count=len(columns),
+                columns=columns,
+                sample_rows=sample_rows,
+            )
+
+        except ConnectivityError:
+            raise
+        except Exception as e:
+            duration_ms = int((time.time() - start) * 1000)
+            self.metrics.record_error("internal_error")
+            audit_log(
+                tool_name="profile_dataset", token_id=token.id,
+                dataset_id=dataset_id, duration_ms=duration_ms,
+                row_count=None, error_code="internal_error", request_id=request_id,
+            )
+            logger.exception("profile_dataset failed: %s", e)
+            raise ConnectivityError("internal_error", "Internal error profiling dataset")
+
+    # ------------------------------------------------------------------
+    # Tool: get_pii_report
+    # ------------------------------------------------------------------
+
+    async def get_pii_report(
+        self, token: ConnectivityToken, dataset_id: str, client_ip: str = "127.0.0.1"
+    ) -> PIIReportResponse:
+        """Get cached PII scan results for a dataset (read-only)."""
+        self._check_enabled()
+        self._enforce_scope(token, "ext:pii")
+        self._enforce_rate_limit(token, "get_pii_report", client_ip)
+
+        request_id = self._make_request_id()
+        start = time.time()
+
+        try:
+            self.rate_limiter.record_request(token.id, "get_pii_report")
+
+            # Validate dataset exists and is queryable (prevents path traversal)
+            record = self._get_queryable_dataset(dataset_id)
+
+            # Read cached PII scan from the known processed directory
+            import json as _json
+            pii_path = Path(settings.processed_directory) / dataset_id / "pii_scan.json"
+
+            if not pii_path.exists():
+                duration_ms = int((time.time() - start) * 1000)
+                self.metrics.record_request("get_pii_report", duration_ms)
+                audit_log(
+                    tool_name="get_pii_report", token_id=token.id,
+                    dataset_id=dataset_id, duration_ms=duration_ms,
+                    row_count=None, error_code=None, request_id=request_id,
+                )
+                return PIIReportResponse(
+                    dataset_id=dataset_id,
+                    status="not_available",
+                    message="Run dataset processing first",
+                )
+
+            pii_data = _json.loads(pii_path.read_text())
+
+            duration_ms = int((time.time() - start) * 1000)
+            self.metrics.record_request("get_pii_report", duration_ms)
+            audit_log(
+                tool_name="get_pii_report", token_id=token.id,
+                dataset_id=dataset_id, duration_ms=duration_ms,
+                row_count=None, error_code=None, request_id=request_id,
+            )
+
+            return PIIReportResponse(
+                dataset_id=dataset_id,
+                status="available",
+                report=pii_data,
+            )
+
+        except ConnectivityError:
+            raise
+        except Exception as e:
+            duration_ms = int((time.time() - start) * 1000)
+            self.metrics.record_error("internal_error")
+            audit_log(
+                tool_name="get_pii_report", token_id=token.id,
+                dataset_id=dataset_id, duration_ms=duration_ms,
+                row_count=None, error_code="internal_error", request_id=request_id,
+            )
+            logger.exception("get_pii_report failed: %s", e)
+            raise ConnectivityError("internal_error", "Internal error reading PII report")
 
     # ------------------------------------------------------------------
     # Health
