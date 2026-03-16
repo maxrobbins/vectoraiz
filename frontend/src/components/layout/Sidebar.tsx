@@ -14,6 +14,7 @@ import {
   FileOutput,
   Store,
   HandHelping,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMode } from "@/contexts/ModeContext";
@@ -35,6 +36,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { path: "/artifacts", label: "Artifacts", icon: FileOutput },
   { path: "/databases", label: "Databases", icon: Database },
   { path: "/settings", label: "Settings", icon: Settings },
+  { path: "/billing", label: "Billing", icon: CreditCard },
   { path: "/ai-market", label: "ai.market", icon: Store },
   { path: "/data-requests", label: "I Need Data", icon: HandHelping },
   { path: "/earnings", label: "Earnings", icon: DollarSign, feature: "marketplace" },
@@ -43,7 +45,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
 
 // direct channel: data-focused items first, marketplace items at bottom
 const NAV_ORDER_DIRECT = [
-  "/", "/datasets", "/search", "/sql", "/artifacts", "/databases", "/settings",
+  "/", "/datasets", "/search", "/sql", "/artifacts", "/databases", "/settings", "/billing",
   "/ai-market", "/data-requests", "/earnings", "/data-types",
 ];
 
@@ -51,11 +53,11 @@ const NAV_ORDER_DIRECT = [
 const NAV_ORDER_MARKETPLACE = [
   "/ai-market", "/data-requests", "/",
   "/datasets", "/search", "/sql", "/artifacts", "/databases",
-  "/earnings", "/data-types", "/settings",
+  "/earnings", "/data-types", "/settings", "/billing",
 ];
 
 // Separator index: items after this index go in the bottom section
-const SEPARATOR_INDEX_DIRECT = 7;    // after Settings
+const SEPARATOR_INDEX_DIRECT = 8;    // after Billing
 const SEPARATOR_INDEX_MARKETPLACE = 2; // after Dashboard
 
 function getOrderedItems(channel: "direct" | "marketplace"): { top: NavItem[]; bottom: NavItem[] } {

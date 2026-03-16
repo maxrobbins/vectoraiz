@@ -22,6 +22,7 @@ import SqlQuery from "./pages/SqlQuery";
 import ArtifactsPage from "./pages/ArtifactsPage";
 import DatabasePage from "./pages/DatabasePage";
 import SettingsPage from "./pages/SettingsPage";
+import BillingPage from "./pages/BillingPage";
 import DataTypesPage from "./pages/DataTypesPage";
 import AiMarketPage from "./pages/AiMarketPage";
 import DataRequestsPage from "./pages/DataRequestsPage";
@@ -122,6 +123,7 @@ const App = () => (
                     <Route path="/artifacts" element={<ArtifactsPage />} />
                     <Route path="/databases" element={<DatabasePage />} />
                     <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/billing" element={<BillingPage />} />
                     <Route path="/data-types" element={<DataTypesPage />} />
                     <Route path="/ai-market" element={<AiMarketPage />} />
                     <Route path="/data-requests" element={<DataRequestsPage />} />

@@ -25,7 +25,6 @@ import {
   Download,
   Terminal,
   Coins,
-  ChevronDown,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -132,25 +131,6 @@ const SettingsPage = () => {
   const [updateMessage, setUpdateMessage] = useState("");
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
-  // allAI Credits state
-  interface AllaiCredits {
-    balance_usd: number;
-    total_usd: number;
-    used_usd: number;
-    usage: Array<{
-      model: string;
-      input_tokens: number;
-      output_tokens: number;
-      cost_usd: number;
-      created_at: string;
-    }>;
-  }
-  const [allaiCredits, setAllaiCredits] = useState<AllaiCredits | null>(null);
-  const [allaiLoading, setAllaiLoading] = useState(false);
-  const [allaiError, setAllaiError] = useState<string | null>(null);
-  const [allaiPurchasing, setAllaiPurchasing] = useState(false);
-  const [showUsageHistory, setShowUsageHistory] = useState(false);
-
   const fetchLocalKeys = useCallback(async () => {
     setKeysLoading(true);
     try {
@@ -186,69 +166,6 @@ const SettingsPage = () => {
       setVersionLoading(false);
     }
   }, []);
-
-  const fetchAllaiCredits = useCallback(async () => {
-    setAllaiLoading(true);
-    setAllaiError(null);
-    try {
-      const storedKey = localStorage.getItem('vectoraiz_api_key');
-      if (!storedKey) { setAllaiLoading(false); return; }
-      const res = await fetch(`${getApiUrl()}/api/allai/credits`, {
-        headers: { 'X-API-Key': storedKey },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAllaiCredits({
-          balance_usd: data.balance_usd ?? 0,
-          total_usd: data.credit_usd ?? 0,
-          used_usd: data.used_usd ?? 0,
-          usage: data.usage ?? [],
-        });
-      } else if (res.status === 409) {
-        setAllaiError('not_connected');
-      } else if (res.status === 503) {
-        setAllaiError('Connect to ai.market to use allAI credits');
-      } else {
-        const err = await res.json().catch(() => ({ detail: 'Failed to fetch credits' }));
-        setAllaiError(err.detail || 'Failed to fetch credits');
-      }
-    } catch {
-      setAllaiError('Failed to connect to server');
-    } finally {
-      setAllaiLoading(false);
-    }
-  }, []);
-
-  const handlePurchaseCredits = async () => {
-    setAllaiPurchasing(true);
-    try {
-      const storedKey = localStorage.getItem('vectoraiz_api_key');
-      if (!storedKey) return;
-      const res = await fetch(`${getApiUrl()}/api/allai/credits/purchase`, {
-        method: 'POST',
-        headers: { 'X-API-Key': storedKey },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.checkout_url) {
-          window.open(data.checkout_url, '_blank');
-          // Re-fetch balance when user returns focus
-          const onFocus = () => {
-            fetchAllaiCredits();
-            window.removeEventListener('focus', onFocus);
-          };
-          window.addEventListener('focus', onFocus);
-        }
-      } else {
-        const err = await res.json().catch(() => ({ detail: 'Failed to create checkout' }));
-        toast({ title: "Error", description: err.detail, variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Error", description: "Failed to initiate purchase", variant: "destructive" });
-    } finally {
-      setAllaiPurchasing(false);
-    }
-  };
 
   const triggerUpdate = async () => {
     setUpdateStatus("updating");
@@ -359,20 +276,6 @@ const SettingsPage = () => {
     fetchVersionInfo();
   }, [fetchVersionInfo]);
 
-  // Fetch allAI credits on mount + handle purchase success redirect
-  useEffect(() => {
-    fetchAllaiCredits();
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('credits') === 'success') {
-      toast({ title: "Credits added successfully!", description: "Your allAI credits have been added." });
-      window.history.replaceState({}, '', '/settings');
-      fetchAllaiCredits();
-    } else if (params.get('credits') === 'cancelled') {
-      toast({ title: "Purchase cancelled", description: "No credits were charged." });
-      window.history.replaceState({}, '', '/settings');
-    }
-  }, [fetchAllaiCredits]);
-
   // Fetch system info for recommended concurrent uploads
   useEffect(() => {
     systemApi.info().then((info) => {
@@ -482,7 +385,7 @@ const SettingsPage = () => {
         </p>
       </div>
 
-      {/* Section: allAI Credits */}
+      {/* Section: allAI Credits — moved to /billing */}
       <Card className="bg-card border-border">
         <CardHeader>
           <div className="flex items-center gap-3">
@@ -495,124 +398,10 @@ const SettingsPage = () => {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {allaiLoading ? (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading credits...
-            </div>
-          ) : allaiError ? (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                {allaiError === 'not_connected' ? (
-                  <>Connect to ai.market to use allAI credits. Check your <a href="#connectivity" className="text-primary underline underline-offset-2 hover:text-primary/80">Connectivity settings</a> below.</>
-                ) : allaiError}
-              </p>
-              <Button disabled variant="outline" size="sm">
-                Add $25 Credits
-              </Button>
-            </div>
-          ) : !allaiCredits ? (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Connect to ai.market to purchase allAI credits
-              </p>
-              <Button disabled variant="outline" size="sm">
-                Add $25 Credits
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Balance display */}
-              <div>
-                <div className="text-2xl font-semibold text-foreground">
-                  ${allaiCredits.balance_usd.toFixed(2)} <span className="text-sm font-normal text-muted-foreground">remaining</span>
-                </div>
-                <Progress
-                  value={allaiCredits.total_usd > 0 ? ((allaiCredits.total_usd - allaiCredits.used_usd) / allaiCredits.total_usd) * 100 : 0}
-                  className="mt-2 h-2"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Used ${allaiCredits.used_usd.toFixed(2)} of ${allaiCredits.total_usd.toFixed(2)} total credits
-                </p>
-              </div>
-
-              {/* Buy button */}
-              <Button
-                onClick={handlePurchaseCredits}
-                disabled={allaiPurchasing}
-                size="sm"
-              >
-                {allaiPurchasing ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                    Opening checkout...
-                  </>
-                ) : (
-                  <>
-                    <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                    Add $25 Credits
-                  </>
-                )}
-              </Button>
-
-              {/* Usage history — collapsible */}
-              {allaiCredits.usage.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No usage yet — allAI credits are consumed when you use AI features
-                </p>
-              ) : (
-                <div className="space-y-1">
-                  <button
-                    onClick={() => setShowUsageHistory(!showUsageHistory)}
-                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
-                  >
-                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showUsageHistory ? '' : '-rotate-90'}`} />
-                    Recent Usage ({allaiCredits.usage.length})
-                  </button>
-                  {showUsageHistory && (
-                    <div className="divide-y divide-border rounded-md border border-border overflow-hidden">
-                      {allaiCredits.usage.slice(0, 10).map((item, i) => {
-                        const ago = (() => {
-                          const diff = Date.now() - new Date(item.created_at).getTime();
-                          const mins = Math.floor(diff / 60000);
-                          if (mins < 1) return "just now";
-                          if (mins < 60) return `${mins}m ago`;
-                          const hrs = Math.floor(mins / 60);
-                          if (hrs < 24) return `${hrs}h ago`;
-                          const days = Math.floor(hrs / 24);
-                          return `${days}d ago`;
-                        })();
-                        const shortModel = item.model
-                          .replace(/^claude-/, '')
-                          .replace(/-\d{8}$/, '')
-                          .replace(/(\w+)-(\d+)(?:-(\d+))?/, (_m, name, major, minor) =>
-                            `${name.charAt(0).toUpperCase() + name.slice(1)} ${major}${minor ? `.${minor}` : ''}`
-                          );
-                        return (
-                          <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-foreground">{shortModel}</span>
-                              <span className="text-muted-foreground">
-                                {(() => {
-                                  const total = item.input_tokens + item.output_tokens;
-                                  return total >= 1000 ? `${(total / 1000).toFixed(1)}k` : String(total);
-                                })()} tokens
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-foreground">${item.cost_usd.toFixed(4)}</span>
-                              <span className="text-muted-foreground">{ago}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+        <CardContent>
+          <a href="/billing" className="text-sm text-primary underline underline-offset-2 hover:text-primary/80">
+            Manage billing and credits &rarr;
+          </a>
         </CardContent>
       </Card>
 

@@ -217,10 +217,16 @@ class SerialClient:
 
     async def credits_checkout(self, serial: str, install_token: str) -> dict:
         """POST /api/v1/serials/{serial}/credits/checkout"""
+        import os
+        port = os.environ.get("PORT", "8100")
+        origin = os.environ.get("VECTORAIZ_ORIGIN", f"http://localhost:{port}")
         status_code, data = await self._request(
             "POST",
             f"/api/v1/serials/{serial}/credits/checkout",
-            headers={"Authorization": f"Bearer {install_token}"},
+            headers={
+                "Authorization": f"Bearer {install_token}",
+                "Origin": origin,
+            },
         )
         if status_code == 200 and data:
             return {"success": True, **data}
