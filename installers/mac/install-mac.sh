@@ -10,6 +10,12 @@
 # =============================================================================
 
 set -e
+
+# Ensure common macOS tool paths are available (curl|bash subshells may have minimal PATH)
+for p in /usr/local/bin /opt/homebrew/bin; do
+    [[ -d "$p" ]] && [[ ":$PATH:" != *":$p:"* ]] && export PATH="$p:$PATH"
+done
+
 cd "$HOME" 2>/dev/null || cd /tmp
 
 # --- Configuration ---
