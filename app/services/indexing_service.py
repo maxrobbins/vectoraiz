@@ -1,10 +1,13 @@
 """
 Indexing service that combines embedding and vector storage.
 Handles automatic indexing of datasets for semantic search.
+
+BQ-VZ-HYBRID-SEARCH Phase 1A: Added sparse vector generation alongside
+dense vectors, hybrid collection creation, and FTS index building.
 """
 
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, date
 from uuid import UUID
 import uuid
@@ -27,11 +30,25 @@ DEFAULT_BATCH_SIZE = 32
 class IndexingService:
     """
     Orchestrates dataset indexing: extracts text, generates embeddings, stores in Qdrant.
+    BQ-VZ-HYBRID-SEARCH: Now generates sparse vectors alongside dense for hybrid search.
     """
-    
+
     def __init__(self):
         self.embedding_service: EmbeddingService = get_embedding_service()
         self.qdrant_service: QdrantService = get_qdrant_service()
+        self._sparse_encoder = None  # Lazy-loaded
+
+    @property
+    def sparse_encoder(self):
+        """Lazy-load sparse encoder only when hybrid mode is enabled."""
+        if self._sparse_encoder is None and settings.hybrid_search_mode == "hybrid":
+            try:
+                from app.services.sparse_encoder import get_sparse_encoder
+                self._sparse_encoder = get_sparse_encoder()
+            except Exception as e:
+                logger.warning("Failed to load sparse encoder, falling back to dense-only: %s", e)
+                self._sparse_encoder = False  # Sentinel: tried and failed
+        return self._sparse_encoder if self._sparse_encoder is not False else None
     
     def index_dataset(
         self,
@@ -55,22 +72,30 @@ class IndexingService:
             Indexing result with statistics
         """
         start_time = datetime.utcnow()
-        
-        # Create or get collection
+
         collection_name = f"dataset_{dataset_id}"
-        self.qdrant_service.create_collection(
-            collection_name, 
-            recreate_if_exists=recreate_collection
-        )
-        
+        use_hybrid = settings.hybrid_search_mode == "hybrid" and self.sparse_encoder is not None
+
+        # Create hybrid or standard collection
+        if use_hybrid:
+            self.qdrant_service.create_hybrid_collection(
+                collection_name,
+                recreate_if_exists=recreate_collection,
+            )
+        else:
+            self.qdrant_service.create_collection(
+                collection_name,
+                recreate_if_exists=recreate_collection,
+            )
+
         # Get dataset metadata to identify text columns
         with ephemeral_duckdb_service() as duckdb:
             metadata = duckdb.get_file_metadata(filepath)
-        
+
         # Auto-detect text columns if not specified
         if text_columns is None:
             text_columns = self._detect_text_columns(filepath)
-        
+
         if not text_columns:
             return {
                 "dataset_id": dataset_id,
@@ -78,10 +103,10 @@ class IndexingService:
                 "reason": "No text columns found for indexing",
                 "collection": collection_name,
             }
-        
+
         # Extract rows for indexing
         rows = self._extract_rows(filepath, row_limit)
-        
+
         if not rows:
             return {
                 "dataset_id": dataset_id,
@@ -89,11 +114,11 @@ class IndexingService:
                 "reason": "No rows to index",
                 "collection": collection_name,
             }
-        
+
         # Generate text representations and embeddings
         texts = []
         payloads = []
-        
+
         filename = filepath.name
 
         for i, row in enumerate(rows):
@@ -114,7 +139,7 @@ class IndexingService:
                     "text_content": text,
                     "row_data": row,  # Store full row for retrieval
                 })
-        
+
         if not texts:
             return {
                 "dataset_id": dataset_id,
@@ -122,34 +147,59 @@ class IndexingService:
                 "reason": "No text content to index",
                 "collection": collection_name,
             }
-        
-        # Generate embeddings in batches
+
+        # Generate dense embeddings
         embeddings = self.embedding_service.embed_texts(
-            texts, 
+            texts,
             batch_size=DEFAULT_BATCH_SIZE,
             show_progress=len(texts) > 100
         )
-        
-        # Store in Qdrant
-        result = self.qdrant_service.upsert_vectors(
-            collection_name=collection_name,
-            vectors=embeddings,
-            payloads=payloads,
-        )
-        
+
+        # Generate sparse vectors and upsert hybrid, or dense-only
+        if use_hybrid:
+            sparse_vectors = self.sparse_encoder.encode_batch(texts)
+            result = self.qdrant_service.upsert_hybrid_vectors(
+                collection_name=collection_name,
+                dense_vectors=embeddings,
+                sparse_vectors=sparse_vectors,
+                payloads=payloads,
+            )
+            logger.info("Hybrid indexed %d vectors for dataset %s", result["upserted"], dataset_id)
+        else:
+            result = self.qdrant_service.upsert_vectors(
+                collection_name=collection_name,
+                vectors=embeddings,
+                payloads=payloads,
+            )
+
+        # Trigger FTS index build in background
+        self._trigger_fts_build(dataset_id, filepath)
+
         end_time = datetime.utcnow()
         duration = (end_time - start_time).total_seconds()
-        
+
         return {
             "dataset_id": dataset_id,
             "status": "completed",
             "collection": collection_name,
             "rows_indexed": result["upserted"],
             "text_columns_used": text_columns,
+            "hybrid_mode": use_hybrid,
             "duration_seconds": round(duration, 2),
             "rows_per_second": round(result["upserted"] / duration, 1) if duration > 0 else 0,
         }
     
+    def _trigger_fts_build(self, dataset_id: str, filepath: Path) -> None:
+        """Trigger async FTS index build if FTS is enabled."""
+        if not settings.fts_enabled:
+            return
+        try:
+            from app.services.fts_service import build_fts_index
+            build_fts_index(dataset_id, filepath)
+            logger.info("FTS index build triggered for dataset %s", dataset_id)
+        except Exception as e:
+            logger.warning("FTS index build trigger failed for %s: %s", dataset_id, e)
+
     def _detect_text_columns(self, filepath: Path) -> List[str]:
         """
         Auto-detect columns suitable for text search.
@@ -244,10 +294,18 @@ class IndexingService:
         logger.info("index_streaming: dataset_id=%s — streaming mode", dataset_id)
         start_time = datetime.utcnow()
         collection_name = f"dataset_{dataset_id}"
-        self.qdrant_service.create_collection(
-            collection_name,
-            recreate_if_exists=recreate_collection,
-        )
+        use_hybrid = settings.hybrid_search_mode == "hybrid" and self.sparse_encoder is not None
+
+        if use_hybrid:
+            self.qdrant_service.create_hybrid_collection(
+                collection_name,
+                recreate_if_exists=recreate_collection,
+            )
+        else:
+            self.qdrant_service.create_collection(
+                collection_name,
+                recreate_if_exists=recreate_collection,
+            )
 
         QDRANT_BATCH_SIZE = 500
         total_indexed = 0
@@ -351,20 +409,35 @@ class IndexingService:
         Uses the ``row_id`` from each payload as the Qdrant point ID so
         that streaming-indexed points have stable, deterministic IDs
         (format: ``{dataset_id}:{chunk_index}:{row_index}``).
+
+        BQ-VZ-HYBRID-SEARCH: Generates sparse vectors alongside dense when
+        hybrid mode is enabled.
         """
         if not texts:
             return 0
         embeddings = self.embedding_service.embed_texts(
             texts, batch_size=DEFAULT_BATCH_SIZE, show_progress=False,
         )
-        # Extract stable point IDs from payloads (B5)
         ids = [p["row_id"] for p in payloads]
-        result = self.qdrant_service.upsert_vectors(
-            collection_name=collection_name,
-            vectors=embeddings,
-            payloads=payloads,
-            ids=ids,
-        )
+
+        use_hybrid = settings.hybrid_search_mode == "hybrid" and self.sparse_encoder is not None
+
+        if use_hybrid and self.qdrant_service.collection_has_sparse(collection_name):
+            sparse_vectors = self.sparse_encoder.encode_batch(texts)
+            result = self.qdrant_service.upsert_hybrid_vectors(
+                collection_name=collection_name,
+                dense_vectors=embeddings,
+                sparse_vectors=sparse_vectors,
+                payloads=payloads,
+                ids=ids,
+            )
+        else:
+            result = self.qdrant_service.upsert_vectors(
+                collection_name=collection_name,
+                vectors=embeddings,
+                payloads=payloads,
+                ids=ids,
+            )
         return result.get("upserted", len(texts))
 
     def _detect_text_columns_from_rows(self, sample_row: Dict[str, Any]) -> List[str]:

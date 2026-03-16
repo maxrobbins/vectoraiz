@@ -60,9 +60,10 @@ def get_file_extension(filename: str) -> str:
 
 @router.get("/")
 async def list_datasets(
-    processing: ProcessingService = Depends(get_processing_service)
+    facets: bool = Query(False, description="Include facet counts in response"),
+    processing: ProcessingService = Depends(get_processing_service),
 ):
-    """List all datasets with their processing status."""
+    """List all datasets with their processing status. Optionally include facet counts."""
     try:
         records = await asyncio.wait_for(
             asyncio.to_thread(processing.list_datasets),
@@ -70,10 +71,17 @@ async def list_datasets(
         )
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Database query timed out")
-    return {
+
+    response = {
         "datasets": [r.to_dict() for r in records],
-        "count": len(records)
+        "count": len(records),
     }
+
+    if facets:
+        from app.services.facet_service import get_facets
+        response["facets"] = get_facets()
+
+    return response
 
 
 @router.post("/upload")
@@ -1263,6 +1271,10 @@ async def delete_dataset(
     success = processing.delete_dataset(dataset_id)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete dataset")
+
+    # Rebuild facets async after dataset removal
+    from app.services.facet_service import rebuild_facets_async
+    rebuild_facets_async()
 
     return {"message": f"Dataset '{dataset_id}' deleted successfully"}
 

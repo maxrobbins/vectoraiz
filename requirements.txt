@@ -81,6 +81,9 @@ datasketches>=5.0
 pandera>=0.20
 presidio-structured>=0.0.1
 
+# BQ-VZ-HYBRID-SEARCH Phase 1A: Hybrid search pipeline
+fastembed>=0.3
+
 # BQ-VZ-PERF Phase 3: Native document handlers (replace Tika sidecar)
 striprtf>=0.0.26
 icalendar>=5.0.0

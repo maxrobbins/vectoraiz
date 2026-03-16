@@ -191,6 +191,14 @@ class Settings(BaseSettings):
     app_version: str = os.environ.get("VECTORAIZ_VERSION", "dev")
     serial_data_dir: str = "/data"  # Directory for serial.json + pending_usage.jsonl
 
+    # BQ-VZ-HYBRID-SEARCH Phase 1A: Hybrid search pipeline config
+    hybrid_search_mode: Literal["hybrid", "dense_only"] = "hybrid"
+    hybrid_rrf_k: int = 60
+    reranker_enabled: bool = True
+    reranker_top_k: int = 30
+    reranker_timeout_ms: int = 200
+    fts_enabled: bool = True
+
     # CORS
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000", "http://localhost:8080", "https://vectoraiz-frontend-production.up.railway.app", "https://dev.vectoraiz.com", "https://vectoraiz.com", "https://www.vectoraiz.com", "https://vectoraiz-website-production.up.railway.app"]
     

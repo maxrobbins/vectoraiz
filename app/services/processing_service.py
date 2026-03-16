@@ -1026,6 +1026,12 @@ class ProcessingService:
                 record.status = DatasetStatus.READY
                 # Bug 1: Populate metadata with DuckDB file stats at write time
                 self._enrich_metadata_from_duckdb(record)
+                # BQ-VZ-HYBRID-SEARCH: Rebuild facets after new dataset is ready
+                try:
+                    from app.services.facet_service import rebuild_facets_async
+                    rebuild_facets_async()
+                except Exception:
+                    pass  # Non-critical
             record.updated_at = datetime.now(timezone.utc)
         except Exception as e:
             record.status = DatasetStatus.ERROR
