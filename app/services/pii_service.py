@@ -25,6 +25,9 @@ from presidio_anonymizer.entities import OperatorConfig
 from app.config import settings
 from app.services.duckdb_service import ephemeral_duckdb_service
 
+# PII settings file for configurable thresholds / entity overrides
+_PII_SETTINGS_FILE = "pii_settings.json"
+
 logger = logging.getLogger(__name__)
 
 # PII entity types to detect
@@ -308,6 +311,171 @@ class PIIService:
         # Ensure score doesn't go below 0
         return max(0.0, round(score, 1))
     
+    # ── Global PII settings (BQ-VZ-DATA-READINESS) ─────────────────────
+
+    def _settings_path(self) -> Path:
+        return Path(settings.data_directory) / _PII_SETTINGS_FILE
+
+    def get_pii_settings(self) -> Dict[str, Any]:
+        """Get global PII settings (score threshold, entity overrides, excluded patterns)."""
+        path = self._settings_path()
+        if not path.exists():
+            return {
+                "score_threshold": DEFAULT_SCORE_THRESHOLD,
+                "entity_overrides": {},
+                "excluded_patterns": [],
+            }
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return {
+                "score_threshold": DEFAULT_SCORE_THRESHOLD,
+                "entity_overrides": {},
+                "excluded_patterns": [],
+            }
+
+    def save_pii_settings(self, pii_settings: Dict[str, Any]) -> Dict[str, Any]:
+        """Save global PII settings."""
+        # Validate threshold
+        threshold = pii_settings.get("score_threshold", DEFAULT_SCORE_THRESHOLD)
+        if not (0.0 <= threshold <= 1.0):
+            raise ValueError("score_threshold must be between 0.0 and 1.0")
+
+        config = {
+            "score_threshold": threshold,
+            "entity_overrides": pii_settings.get("entity_overrides", {}),
+            "excluded_patterns": pii_settings.get("excluded_patterns", []),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        path = self._settings_path()
+        with open(path, "w") as f:
+            json.dump(config, f, indent=2)
+        logger.info("Saved global PII settings: threshold=%.2f", threshold)
+        return config
+
+    # ── Structured scanning (BQ-VZ-DATA-READINESS) ───────────────────
+
+    def scan_structured(
+        self,
+        filepath: Path,
+        sample_size: int = DEFAULT_SAMPLE_SIZE,
+    ) -> Dict[str, Any]:
+        """Column-aware structured PII scan.
+
+        Uses the Presidio analyzer on each column with type-aware heuristics.
+        Applies configurable score thresholds and excluded patterns from settings.
+        Sensor IDs and similar domain-specific patterns are excluded by default.
+        """
+        pii_settings = self.get_pii_settings()
+        threshold = pii_settings.get("score_threshold", DEFAULT_SCORE_THRESHOLD)
+        excluded = set(pii_settings.get("excluded_patterns", []))
+        entity_overrides = pii_settings.get("entity_overrides", {})
+
+        # Determine which entities to scan per column
+        entities = list(DEFAULT_ENTITIES)
+
+        start_time = datetime.utcnow()
+
+        with ephemeral_duckdb_service() as duckdb:
+            file_type = duckdb.detect_file_type(filepath)
+            if file_type is None:
+                raise ValueError(f"Unsupported file type: {filepath.suffix}")
+            read_func = duckdb.get_read_function(file_type, str(filepath))
+
+            schema = duckdb.connection.execute(
+                f"DESCRIBE SELECT * FROM {read_func}"
+            ).fetchall()
+            columns = [(row[0], row[1]) for row in schema]
+
+            count_result = duckdb.connection.execute(
+                f"SELECT COUNT(*) FROM {read_func}"
+            ).fetchone()
+            total_rows = count_result[0] if count_result else 0
+
+            sample_query = (
+                f"SELECT * FROM {read_func} "
+                f"USING SAMPLE {min(sample_size, total_rows)}"
+            )
+            sample_rows = duckdb.connection.execute(sample_query).fetchall()
+
+        column_names = [c[0] for c in columns]
+        column_types = {c[0]: c[1].lower() for c in columns}
+        column_results: Dict[str, PIIResult] = {col: PIIResult(col) for col in column_names}
+
+        for row in sample_rows:
+            for col_name, value in zip(column_names, row):
+                if value is None:
+                    continue
+                text = str(value)
+                if not text or len(text) >= 10000:
+                    continue
+
+                # Skip excluded patterns
+                if any(pat in text for pat in excluded):
+                    continue
+
+                # Skip numeric-only columns for name/location detection
+                col_type = column_types.get(col_name, "")
+                scan_entities = list(entities)
+                if any(t in col_type for t in ("int", "float", "double", "decimal")):
+                    # Numeric columns: only scan for SSN, credit card, phone
+                    scan_entities = [
+                        e for e in entities
+                        if e in ("US_SSN", "CREDIT_CARD", "PHONE_NUMBER", "IP_ADDRESS")
+                    ]
+
+                # Apply entity overrides (disable specific entities per column)
+                col_overrides = entity_overrides.get(col_name, {})
+                if col_overrides.get("disabled"):
+                    continue
+                disabled_entities = set(col_overrides.get("disabled_entities", []))
+                scan_entities = [e for e in scan_entities if e not in disabled_entities]
+
+                pii_matches = self.scan_text(text, scan_entities, threshold)
+                for match in pii_matches:
+                    column_results[col_name].add_match(
+                        entity_type=match.entity_type,
+                        confidence=match.score,
+                        sample_value=text[match.start:match.end],
+                    )
+
+        columns_with_pii = [r.to_dict() for r in column_results.values() if r.pii_detected]
+        columns_clean = [col for col in column_names if not column_results[col].pii_detected]
+
+        overall_risk = "none"
+        for result in column_results.values():
+            risk = result._calculate_risk_level()
+            if risk == "high":
+                overall_risk = "high"
+                break
+            elif risk == "medium" and overall_risk != "high":
+                overall_risk = "medium"
+            elif risk == "low" and overall_risk == "none":
+                overall_risk = "low"
+
+        privacy_score = self._calculate_privacy_score(columns_with_pii, overall_risk)
+
+        end_time = datetime.utcnow()
+        duration = (end_time - start_time).total_seconds()
+
+        return {
+            "scanned_at": start_time.isoformat(),
+            "scan_type": "structured",
+            "total_rows": total_rows,
+            "rows_sampled": len(sample_rows),
+            "total_columns": len(column_names),
+            "columns_with_pii": len(columns_with_pii),
+            "columns_clean": len(columns_clean),
+            "overall_risk": overall_risk,
+            "privacy_score": privacy_score,
+            "column_results": columns_with_pii,
+            "clean_columns": columns_clean,
+            "duration_seconds": round(duration, 2),
+            "entities_checked": entities,
+            "score_threshold": threshold,
+        }
+
     def scan_text_content(
         self,
         text_blocks: List[str],

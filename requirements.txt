@@ -76,6 +76,11 @@ ijson>=3.2.0
 docker>=7.0.0
 websockets>=14.0,<15.0
 
+# BQ-VZ-DATA-READINESS Phase 1A: Data profiling + quality contracts
+datasketches>=5.0
+pandera>=0.20
+presidio-structured>=0.1
+
 # BQ-VZ-PERF Phase 3: Native document handlers (replace Tika sidecar)
 striprtf>=0.0.26
 icalendar>=5.0.0

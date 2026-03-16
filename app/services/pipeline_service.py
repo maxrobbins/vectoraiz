@@ -27,6 +27,8 @@ from app.services.pii_service import get_pii_service
 from app.services.compliance_service import get_compliance_service
 from app.services.attestation_service import get_attestation_service
 from app.services.listing_metadata_service import get_listing_metadata_service
+from app.services.sketch_service import get_sketch_service
+from app.services.quality_contract_service import get_quality_contract_service
 from app.utils.sanitization import sql_quote_literal
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,7 @@ PIPELINE_FAILED = "failed"
 
 # Steps in the full pipeline
 FULL_PIPELINE_STEPS = ["analyze_process", "pii_scan", "compliance_check"]
-EXTENDED_PIPELINE_STEPS = ["duckdb_analysis", "pii_scan", "compliance_report", "attestation", "listing_metadata"]
+EXTENDED_PIPELINE_STEPS = ["duckdb_analysis", "sketch_profile", "pii_scan", "quality_check", "compliance_report", "attestation", "listing_metadata"]
 
 
 def _atomic_write_json(path: Path, data: dict) -> None:
@@ -113,6 +115,8 @@ class PipelineService:
         self.compliance_service = get_compliance_service()
         self.attestation_service = get_attestation_service()
         self.listing_metadata_service = get_listing_metadata_service()
+        self.sketch_service = get_sketch_service()
+        self.quality_contract_service = get_quality_contract_service()
         self.processing_dir = Path(settings.data_directory) / "processed"
         self.processing_dir.mkdir(parents=True, exist_ok=True)
 
@@ -438,6 +442,8 @@ class PipelineService:
             ("attestation", "attestation.json"),
             ("analysis", "analysis.json"),
             ("duckdb_analysis", "duckdb_analysis.json"),
+            ("sketch_profile", "sketch_profile.json"),
+            ("quality_scorecard", "quality_scorecard.json"),
         ]:
             fpath = dataset_dir / filename
             if fpath.exists():
@@ -459,13 +465,15 @@ class PipelineService:
 
     async def run_pipeline(self, dataset_id: str):
         """
-        Runs the extended processing pipeline for a dataset (5 steps).
+        Runs the extended processing pipeline for a dataset (7 steps).
 
         Args:
             dataset_id: The ID of the dataset to process.
         """
         self._init_pipeline_state(dataset_id, EXTENDED_PIPELINE_STEPS)
         self._update_status(dataset_id, PIPELINE_RUNNING, "Pipeline started.")
+
+        total_steps = len(EXTENDED_PIPELINE_STEPS)
 
         with ephemeral_duckdb_service() as duckdb:
             dataset_info = duckdb.get_dataset_by_id(dataset_id)
@@ -479,7 +487,7 @@ class PipelineService:
         # --- Step 1: DuckDB Analysis ---
         self._set_step_status(dataset_id, "duckdb_analysis", STEP_RUNNING)
         try:
-            self._update_status(dataset_id, PIPELINE_RUNNING, "Step 1/5: Analyzing dataset with DuckDB...")
+            self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 1/{total_steps}: Analyzing dataset with DuckDB...")
             with ephemeral_duckdb_service() as duckdb:
                 metadata = duckdb.get_enhanced_metadata(filepath)
             _atomic_write_json(dataset_dir / "duckdb_analysis.json", metadata)
@@ -490,11 +498,21 @@ class PipelineService:
             self._update_status(dataset_id, PIPELINE_FAILED, "DuckDB analysis failed. Halting pipeline.")
             return  # Hard dependency, cannot continue
 
-        # --- Step 2: PII Scan ---
+        # --- Step 2: Sketch Profile (DataSketches) ---
+        self._set_step_status(dataset_id, "sketch_profile", STEP_RUNNING)
+        try:
+            self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 2/{total_steps}: Generating statistical profile...")
+            self.sketch_service.generate_profile(dataset_id)
+            self._set_step_status(dataset_id, "sketch_profile", STEP_SUCCESS)
+        except Exception as e:
+            logger.error("Sketch profile failed for %s: %s", dataset_id, e, exc_info=True)
+            self._set_step_status(dataset_id, "sketch_profile", STEP_FAILED, str(e))
+
+        # --- Step 3: PII Scan ---
         pii_scan_result = None
         self._set_step_status(dataset_id, "pii_scan", STEP_RUNNING)
         try:
-            self._update_status(dataset_id, PIPELINE_RUNNING, "Step 2/5: Scanning for PII...")
+            self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 3/{total_steps}: Scanning for PII...")
             pii_scan_result = self.pii_service.scan_dataset(filepath)
             _atomic_write_json(dataset_dir / "pii_scan.json", pii_scan_result)
             self._set_step_status(dataset_id, "pii_scan", STEP_SUCCESS)
@@ -502,34 +520,44 @@ class PipelineService:
             logger.error("PII scan failed for %s: %s", dataset_id, e, exc_info=True)
             self._set_step_status(dataset_id, "pii_scan", STEP_FAILED, str(e))
 
-        # --- Step 3: Compliance Report ---
+        # --- Step 4: Quality Check (Pandera) ---
+        self._set_step_status(dataset_id, "quality_check", STEP_RUNNING)
+        try:
+            self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 4/{total_steps}: Running quality checks...")
+            self.quality_contract_service.validate_dataset(dataset_id)
+            self._set_step_status(dataset_id, "quality_check", STEP_SUCCESS)
+        except Exception as e:
+            logger.error("Quality check failed for %s: %s", dataset_id, e, exc_info=True)
+            self._set_step_status(dataset_id, "quality_check", STEP_FAILED, str(e))
+
+        # --- Step 5: Compliance Report ---
         self._set_step_status(dataset_id, "compliance_report", STEP_RUNNING)
         if pii_scan_result:
             try:
-                self._update_status(dataset_id, PIPELINE_RUNNING, "Step 3/5: Generating compliance report...")
+                self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 5/{total_steps}: Generating compliance report...")
                 compliance_report = await self.compliance_service.generate_compliance_report(dataset_id)
                 self._set_step_status(dataset_id, "compliance_report", STEP_SUCCESS)
             except Exception as e:
                 logger.error("Compliance report failed for %s: %s", dataset_id, e, exc_info=True)
                 self._set_step_status(dataset_id, "compliance_report", STEP_FAILED, str(e))
         else:
-            self._update_status(dataset_id, PIPELINE_RUNNING, "Step 3/5: Skipping compliance report (no PII results).")
+            self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 5/{total_steps}: Skipping compliance report (no PII results).")
             self._set_step_status(dataset_id, "compliance_report", STEP_SKIPPED, "No PII results available")
 
-        # --- Step 4: Attestation ---
+        # --- Step 6: Attestation ---
         self._set_step_status(dataset_id, "attestation", STEP_RUNNING)
         try:
-            self._update_status(dataset_id, PIPELINE_RUNNING, "Step 4/5: Generating quality attestation...")
+            self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 6/{total_steps}: Generating quality attestation...")
             attestation = await self.attestation_service.generate_attestation(dataset_id)
             self._set_step_status(dataset_id, "attestation", STEP_SUCCESS)
         except Exception as e:
             logger.error("Attestation failed for %s: %s", dataset_id, e, exc_info=True)
             self._set_step_status(dataset_id, "attestation", STEP_FAILED, str(e))
 
-        # --- Step 5: Listing Metadata ---
+        # --- Step 7: Listing Metadata ---
         self._set_step_status(dataset_id, "listing_metadata", STEP_RUNNING)
         try:
-            self._update_status(dataset_id, PIPELINE_RUNNING, "Step 5/5: Generating listing metadata...")
+            self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 7/{total_steps}: Generating listing metadata...")
             listing_metadata = await self.listing_metadata_service.generate_listing_metadata(dataset_id)
             self._set_step_status(dataset_id, "listing_metadata", STEP_SUCCESS)
         except Exception as e:

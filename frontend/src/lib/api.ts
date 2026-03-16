@@ -171,6 +171,47 @@ export interface DatasetProfileResponse {
   }[];
 }
 
+// BQ-VZ-DATA-READINESS: Combined readiness report
+export interface DatasetReadinessResponse {
+  dataset_id: string;
+  schema_report: Record<string, unknown> | null;
+  pii_risk: {
+    overall_risk: string;
+    privacy_score: number;
+    columns_with_pii: number;
+    columns_clean: number;
+    column_results: {
+      column: string;
+      pii_detected: boolean;
+      pii_types: string[];
+      risk_level: string;
+      max_confidence: number;
+    }[];
+  } | null;
+  quality_scorecard: {
+    dataset_id: string;
+    completeness: { score: number; details: string[] };
+    validity: { score: number; details: string[] };
+    consistency: { score: number; details: string[] };
+    uniqueness: { score: number; details: string[] };
+    overall_score: number;
+    grade: string;
+  } | null;
+  statistical_profile: {
+    dataset_id: string;
+    row_count: number;
+    column_count: number;
+    columns: {
+      column_name: string;
+      dtype: string;
+      null_rate: number;
+      hll_distinct_estimate: number;
+      quantiles: Record<string, number> | null;
+      frequent_items: { value: string; estimate: number }[] | null;
+    }[];
+  } | null;
+}
+
 export interface UploadResponse {
   dataset_id: string;
   status: string;
@@ -461,6 +502,9 @@ export const datasetsApi = {
 
   confirm: (id: string) =>
     apiFetch<{ dataset_id: string; status: string }>(`/api/datasets/${id}/confirm`, { method: 'POST' }),
+
+  getReadiness: (id: string) =>
+    apiFetch<DatasetReadinessResponse>(`/api/datasets/${id}/readiness`),
 
   // BQ-108: Batch upload
   batchUpload: async (files: File[], paths?: string[]): Promise<BatchUploadResponse> => {

@@ -235,6 +235,37 @@ async def get_pii_config(
     }
 
 
+# ── BQ-VZ-DATA-READINESS: PII Settings ────────────────────────────────
+
+
+class PIISettingsBody(BaseModel):
+    """Global PII scanning settings."""
+    score_threshold: float = Field(0.5, ge=0.0, le=1.0, description="Minimum confidence threshold (0.0-1.0)")
+    entity_overrides: Dict = Field(default_factory=dict, description="Per-column entity overrides")
+    excluded_patterns: list = Field(default_factory=list, description="Patterns to exclude from PII detection (e.g. sensor IDs)")
+
+
+@router.get("/settings")
+async def get_pii_settings(
+    pii_service: PIIService = Depends(get_pii_service),
+):
+    """Get global PII scanning settings (thresholds, overrides, exclusions)."""
+    return pii_service.get_pii_settings()
+
+
+@router.put("/settings")
+async def update_pii_settings(
+    body: PIISettingsBody,
+    pii_service: PIIService = Depends(get_pii_service),
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Update global PII scanning settings."""
+    try:
+        return pii_service.save_pii_settings(body.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 @router.post("/analyze-text")
 async def analyze_text(
     text: str,

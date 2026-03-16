@@ -105,6 +105,11 @@ const SettingsPage = () => {
   const [showMarketplaceKey, setShowMarketplaceKey] = useState(false);
   const [marketplaceConnected, setMarketplaceConnected] = useState(false);
 
+  // PII Settings state (BQ-VZ-DATA-READINESS)
+  const [piiThreshold, setPiiThreshold] = useState([0.5]);
+  const [piiExcludedPatterns, setPiiExcludedPatterns] = useState("");
+  const [piiSettingsLoading, setPiiSettingsLoading] = useState(false);
+
   // Local API Keys management state
   const { logout } = useAuth();
   const { hasFeature } = useMode();
@@ -288,6 +293,41 @@ const SettingsPage = () => {
       // Fallback: leave recommendation as null
     });
   }, []);
+
+  // Fetch PII settings on mount (BQ-VZ-DATA-READINESS)
+  useEffect(() => {
+    const url = apiUrl || window.location.origin;
+    const apiKey = localStorage.getItem('vectoraiz_api_key');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['X-API-Key'] = apiKey;
+    fetch(`${url}/api/pii/settings`, { headers })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) {
+          setPiiThreshold([data.score_threshold ?? 0.5]);
+          setPiiExcludedPatterns((data.excluded_patterns ?? []).join(", "));
+        }
+      })
+      .catch(() => {});
+  }, [apiUrl]);
+
+  const savePiiSettings = async () => {
+    setPiiSettingsLoading(true);
+    try {
+      const url = apiUrl || window.location.origin;
+      const apiKey = localStorage.getItem('vectoraiz_api_key');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (apiKey) headers['X-API-Key'] = apiKey;
+      const body = {
+        score_threshold: piiThreshold[0],
+        excluded_patterns: piiExcludedPatterns.split(",").map((s: string) => s.trim()).filter(Boolean),
+        entity_overrides: {},
+      };
+      await fetch(`${url}/api/pii/settings`, { method: 'PUT', headers, body: JSON.stringify(body) });
+    } finally {
+      setPiiSettingsLoading(false);
+    }
+  };
 
   // Validate URL format
   const isValidUrl = (url: string): boolean => {
@@ -682,6 +722,51 @@ const SettingsPage = () => {
               )}
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* PII Detection Settings (BQ-VZ-DATA-READINESS) */}
+      <Card className="bg-card border-border">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+              <Eye className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-foreground">PII Detection</CardTitle>
+              <p className="text-sm text-muted-foreground">Configure PII scanning thresholds and exclusions</p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Confidence Threshold: {piiThreshold[0].toFixed(2)}</Label>
+            <Slider
+              value={piiThreshold}
+              onValueChange={setPiiThreshold}
+              min={0.1}
+              max={1.0}
+              step={0.05}
+            />
+            <p className="text-xs text-muted-foreground">
+              Higher values reduce false positives. Lower values catch more potential PII.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>Excluded Patterns (comma-separated)</Label>
+            <Input
+              placeholder="SENSOR-, DEV-, TEST-"
+              value={piiExcludedPatterns}
+              onChange={(e) => setPiiExcludedPatterns(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Patterns that should not be flagged as PII (e.g. sensor IDs, device codes).
+            </p>
+          </div>
+          <Button onClick={savePiiSettings} disabled={piiSettingsLoading} size="sm">
+            {piiSettingsLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+            Save PII Settings
+          </Button>
         </CardContent>
       </Card>
 

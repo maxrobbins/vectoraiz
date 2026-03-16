@@ -27,8 +27,9 @@ import {
   ChevronRight as ChevronRightIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -45,6 +46,7 @@ import {
   type ApiDataset,
   type DatasetSampleResponse,
   type DatasetStatisticsResponse,
+  type DatasetReadinessResponse,
 } from "@/lib/api";
 import { type ColumnSchema, type Dataset } from "@/types/mockDatasets";
 import { toast } from "@/hooks/use-toast";
@@ -141,6 +143,7 @@ const DatasetDetail = () => {
   const [apiDataset, setApiDataset] = useState<ApiDataset | null>(null);
   const [sampleData, setSampleData] = useState<Record<string, unknown>[]>([]);
   const [statistics, setStatistics] = useState<DatasetStatisticsResponse | null>(null);
+  const [readiness, setReadiness] = useState<DatasetReadinessResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -160,9 +163,10 @@ const DatasetDetail = () => {
         setApiDataset(data);
 
         // Fetch sample data and statistics in parallel
-        const [sampleRes, statsRes] = await Promise.allSettled([
+        const [sampleRes, statsRes, readinessRes] = await Promise.allSettled([
           datasetsApi.getSample(id, 20),
           datasetsApi.getStatistics(id),
+          datasetsApi.getReadiness(id),
         ]);
 
         if (sampleRes.status === "fulfilled") {
@@ -170,6 +174,9 @@ const DatasetDetail = () => {
         }
         if (statsRes.status === "fulfilled") {
           setStatistics(statsRes.value);
+        }
+        if (readinessRes.status === "fulfilled") {
+          setReadiness(readinessRes.value);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load dataset");
@@ -464,6 +471,7 @@ const DatasetDetail = () => {
           <TabsTrigger value="schema">Schema</TabsTrigger>
           <TabsTrigger value="sample">Sample Data</TabsTrigger>
           <TabsTrigger value="statistics">Statistics</TabsTrigger>
+          <TabsTrigger value="readiness">Readiness</TabsTrigger>
           {hasFeature("marketplace") && datasetIsPublished && (
             <TabsTrigger value="marketplace">Marketplace</TabsTrigger>
           )}
@@ -805,6 +813,136 @@ const DatasetDetail = () => {
               </Card>
             ))}
           </div>
+        </TabsContent>
+
+        {/* Readiness Tab — BQ-VZ-DATA-READINESS */}
+        <TabsContent value="readiness" className="space-y-6">
+          {readiness ? (
+            <>
+              {/* Quality Scorecard */}
+              {readiness.quality_scorecard && (
+                <Card className="bg-card border-border">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Quality Scorecard</CardTitle>
+                    <CardDescription>
+                      Overall Grade: <Badge variant={readiness.quality_scorecard.grade === "A" || readiness.quality_scorecard.grade === "B" ? "default" : "destructive"} className="ml-1">{readiness.quality_scorecard.grade}</Badge>
+                      <span className="ml-2 text-muted-foreground">({(readiness.quality_scorecard.overall_score * 100).toFixed(0)}%)</span>
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {(["completeness", "validity", "consistency", "uniqueness"] as const).map((dim) => {
+                      const d = readiness.quality_scorecard![dim];
+                      return (
+                        <div key={dim}>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="capitalize">{dim}</span>
+                            <span className={d.score >= 0.8 ? "text-green-400" : d.score >= 0.5 ? "text-yellow-400" : "text-red-400"}>
+                              {(d.score * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <Progress value={d.score * 100} className="h-2" />
+                          {d.details.length > 0 && (
+                            <ul className="mt-1 text-xs text-muted-foreground">
+                              {d.details.slice(0, 3).map((detail, i) => (
+                                <li key={i}>{detail}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* PII Risk */}
+              {readiness.pii_risk && (
+                <Card className="bg-card border-border">
+                  <CardHeader>
+                    <CardTitle className="text-lg">PII Risk Assessment</CardTitle>
+                    <CardDescription>
+                      Risk: <Badge variant={readiness.pii_risk.overall_risk === "none" ? "default" : readiness.pii_risk.overall_risk === "high" ? "destructive" : "secondary"} className="ml-1">{readiness.pii_risk.overall_risk}</Badge>
+                      <span className="ml-2 text-muted-foreground">Privacy Score: {readiness.pii_risk.privacy_score}/10</span>
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div><span className="text-muted-foreground">Columns with PII:</span> {readiness.pii_risk.columns_with_pii}</div>
+                      <div><span className="text-muted-foreground">Clean columns:</span> {readiness.pii_risk.columns_clean}</div>
+                    </div>
+                    {readiness.pii_risk.column_results && readiness.pii_risk.column_results.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        {readiness.pii_risk.column_results.map((col) => (
+                          <div key={col.column} className="flex items-center justify-between text-sm border-b border-border pb-2">
+                            <span className="font-mono">{col.column}</span>
+                            <div className="flex gap-1">
+                              {col.pii_types.map((t) => (
+                                <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
+                              ))}
+                              <Badge variant={col.risk_level === "high" ? "destructive" : "secondary"} className="text-xs">{col.risk_level}</Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Statistical Profile */}
+              {readiness.statistical_profile && (
+                <Card className="bg-card border-border">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Statistical Profile</CardTitle>
+                    <CardDescription>
+                      {readiness.statistical_profile.row_count.toLocaleString()} rows, {readiness.statistical_profile.column_count} columns
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {readiness.statistical_profile.columns.slice(0, 20).map((col) => (
+                        <div key={col.column_name} className="border-b border-border pb-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="font-mono">{col.column_name}</span>
+                            <span className="text-muted-foreground">{col.dtype}</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground mt-1">
+                            <div>Distinct: ~{col.hll_distinct_estimate.toLocaleString()}</div>
+                            <div>Null: {(col.null_rate * 100).toFixed(1)}%</div>
+                            {col.quantiles && <div>Median: {col.quantiles.p50}</div>}
+                          </div>
+                          {col.frequent_items && col.frequent_items.length > 0 && (
+                            <div className="flex gap-1 mt-1 flex-wrap">
+                              {col.frequent_items.slice(0, 5).map((fi, i) => (
+                                <Badge key={i} variant="outline" className="text-xs font-mono">
+                                  {String(fi.value).slice(0, 20)}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {!readiness.quality_scorecard && !readiness.pii_risk && !readiness.statistical_profile && (
+                <Card className="bg-card border-border">
+                  <CardContent className="p-8 text-center text-muted-foreground">
+                    No readiness data available yet. Run the processing pipeline first.
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          ) : (
+            <Card className="bg-card border-border">
+              <CardContent className="p-8 text-center text-muted-foreground">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                Loading readiness report...
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Marketplace Tab */}

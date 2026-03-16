@@ -33,6 +33,8 @@ from app.models.compliance_schemas import ComplianceReport
 from app.services.listing_metadata_service import ListingMetadataService, get_listing_metadata_service
 from app.models.listing_metadata_schemas import ListingMetadata
 from app.services.pipeline_service import PipelineService, get_pipeline_service
+from app.services.sketch_service import get_sketch_service
+from app.services.quality_contract_service import get_quality_contract_service
 from app.services.marketplace_push_service import MarketplacePushService, get_marketplace_push_service, MarketplacePushError
 from app.services.batch_service import get_batch_service, BatchService
 from app.services.preview_service import get_preview_service, PreviewService
@@ -1321,3 +1323,66 @@ async def publish_to_marketplace(
             status_code=500,
             detail=f"Unexpected error during publish: {str(e)}"
         )
+
+
+# ── BQ-VZ-DATA-READINESS: Readiness Report ─────────────────────────
+
+
+@router.get("/{dataset_id}/readiness")
+async def get_dataset_readiness(
+    dataset_id: str,
+    processing: ProcessingService = Depends(get_processing_service),
+):
+    """Get combined readiness report: schema + PII risk + quality scorecard + statistical profile."""
+    record = processing.get_dataset(dataset_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Dataset '{dataset_id}' not found")
+
+    if record.status != ProcessingStatus.READY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Dataset not ready. Current status: {record.status.value}",
+        )
+
+    data_dir = Path(settings.data_directory) / "processed" / dataset_id
+
+    def _load_json(filename: str):
+        path = data_dir / filename
+        if not path.exists():
+            return None
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    # Load all report artifacts (any may be missing if pipeline step failed)
+    schema_report = _load_json("duckdb_analysis.json")
+    pii_report = _load_json("pii_scan.json")
+    quality_scorecard = _load_json("quality_scorecard.json")
+    sketch_profile = _load_json("sketch_profile.json")
+
+    # If sketch/quality don't exist yet, generate them on-demand
+    if sketch_profile is None:
+        try:
+            svc = get_sketch_service()
+            profile = await run_sync(lambda: svc.generate_profile(dataset_id))
+            sketch_profile = profile.model_dump()
+        except Exception as e:
+            logger.warning("On-demand sketch profile failed for %s: %s", dataset_id, e)
+
+    if quality_scorecard is None:
+        try:
+            svc = get_quality_contract_service()
+            scorecard = await run_sync(lambda: svc.validate_dataset(dataset_id))
+            quality_scorecard = scorecard.model_dump()
+        except Exception as e:
+            logger.warning("On-demand quality scorecard failed for %s: %s", dataset_id, e)
+
+    return {
+        "dataset_id": dataset_id,
+        "schema_report": schema_report,
+        "pii_risk": pii_report,
+        "quality_scorecard": quality_scorecard,
+        "statistical_profile": sketch_profile,
+    }
