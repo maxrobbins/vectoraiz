@@ -218,15 +218,16 @@ class SerialClient:
     async def credits_checkout(self, serial: str, install_token: str, amount_usd: float = 25.0) -> dict:
         """POST /api/v1/serials/{serial}/credits/checkout"""
         import os
-        port = os.environ.get("PORT", "8100")
-        origin = os.environ.get("VECTORAIZ_ORIGIN", f"http://localhost:{port}")
+        # Return URL must point to the FRONTEND (8080), not the backend (8100)
+        frontend_port = os.environ.get("VECTORAIZ_FRONTEND_PORT", "8080")
+        return_url = os.environ.get("VECTORAIZ_RETURN_URL", f"http://localhost:{frontend_port}")
         status_code, data = await self._request(
             "POST",
             f"/api/v1/serials/{serial}/credits/checkout",
             json={"amount_usd": amount_usd},
             headers={
                 "Authorization": f"Bearer {install_token}",
-                "Origin": origin,
+                "X-VZ-Return-URL": return_url,
             },
         )
         if status_code == 200 and data:
