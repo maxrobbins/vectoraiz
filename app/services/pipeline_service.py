@@ -345,7 +345,7 @@ class PipelineService:
         try:
             self._update_status(dataset_id, PIPELINE_RUNNING, "Step 2/3: Scanning for PII...")
             scan_target = processed_parquet_path if processed_parquet_path.exists() else filepath
-            pii_scan_result = self.pii_service.scan_dataset(scan_target)
+            pii_scan_result = self.pii_service.scan_structured(scan_target)
 
             _atomic_write_json(pii_scan_path, pii_scan_result)
             self._set_step_status(dataset_id, "pii_scan", STEP_SUCCESS)
@@ -513,7 +513,7 @@ class PipelineService:
         self._set_step_status(dataset_id, "pii_scan", STEP_RUNNING)
         try:
             self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 3/{total_steps}: Scanning for PII...")
-            pii_scan_result = self.pii_service.scan_dataset(filepath)
+            pii_scan_result = self.pii_service.scan_structured(filepath)
             _atomic_write_json(dataset_dir / "pii_scan.json", pii_scan_result)
             self._set_step_status(dataset_id, "pii_scan", STEP_SUCCESS)
         except Exception as e:

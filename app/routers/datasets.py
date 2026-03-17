@@ -1344,6 +1344,7 @@ async def publish_to_marketplace(
 async def get_dataset_readiness(
     dataset_id: str,
     processing: ProcessingService = Depends(get_processing_service),
+    user: AuthenticatedUser = Depends(get_current_user),
 ):
     """Get combined readiness report: schema + PII risk + quality scorecard + statistical profile."""
     record = processing.get_dataset(dataset_id)

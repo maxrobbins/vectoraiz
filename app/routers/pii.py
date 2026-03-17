@@ -108,7 +108,8 @@ async def scan_dataset(
         raise HTTPException(status_code=500, detail="Processed file not found")
     
     try:
-        result = pii_service.scan_dataset(
+        # Use structured scan for tabular data (column-aware with type heuristics)
+        result = pii_service.scan_structured(
             filepath=record.processed_path,
             sample_size=sample_size,
         )

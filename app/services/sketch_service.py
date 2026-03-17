@@ -103,16 +103,26 @@ class SketchService:
                 if any(t in col_lower for t in ("int", "float", "double", "decimal", "numeric", "bigint", "smallint", "tinyint", "hugeint")):
                     kll_sketches[col_name] = kll_floats_sketch()
 
-            # Process in chunks
-            offset = 0
-            while offset < row_count:
-                chunk_rows = duckdb.connection.execute(
-                    f"SELECT * FROM {read_func} LIMIT {CHUNK_SIZE} OFFSET {offset}"
-                ).fetchall()
-                if not chunk_rows:
+            # Process in chunks using fetch_record_batch for efficiency
+            result = duckdb.connection.execute(
+                f"SELECT * FROM {read_func}"
+            )
+            reader = result.fetch_record_batch(CHUNK_SIZE)
+            while True:
+                try:
+                    batch = reader.read_next_batch()
+                except StopIteration:
+                    break
+                if batch.num_rows == 0:
                     break
 
-                for row in chunk_rows:
+                # Convert Arrow batch to Python rows
+                batch_rows = [
+                    tuple(batch.column(i)[row_idx].as_py() for i in range(batch.num_columns))
+                    for row_idx in range(batch.num_rows)
+                ]
+
+                for row in batch_rows:
                     for i, (col_name, _col_type) in enumerate(columns):
                         val = row[i]
                         total_counts[col_name] += 1
@@ -134,8 +144,6 @@ class SketchService:
                                 kll_sketches[col_name].update(float(val))
                             except (ValueError, TypeError):
                                 pass
-
-                offset += CHUNK_SIZE
 
         # Build output
         column_profiles = []

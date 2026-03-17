@@ -167,6 +167,25 @@ class QualityContractService:
 
         return DimensionScore(score=round(score, 4), details=details)
 
+    @staticmethod
+    def _duckdb_type_to_pandera(col_type: str):
+        """Map DuckDB column type string to a Pandera dtype."""
+        t = col_type.upper()
+        if t in ("INTEGER", "INT", "INT4", "SIGNED", "BIGINT", "INT8",
+                  "SMALLINT", "INT2", "TINYINT", "INT1", "HUGEINT"):
+            return pa.Int64
+        if t in ("FLOAT", "FLOAT4", "REAL", "DOUBLE", "FLOAT8", "DECIMAL", "NUMERIC"):
+            return pa.Float64
+        if t in ("VARCHAR", "TEXT", "STRING", "CHAR", "BPCHAR"):
+            return pa.String
+        if t in ("BOOLEAN", "BOOL"):
+            return pa.Bool
+        if t in ("DATE", "TIMESTAMP", "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE",
+                  "TIMESTAMP_S", "TIMESTAMP_MS", "TIMESTAMP_NS"):
+            return pa.DateTime
+        # Unknown type — skip dtype enforcement
+        return None
+
     def _check_validity(self, duckdb, read_func, columns) -> DimensionScore:
         """Validate type conformance on a sample using Pandera."""
         import pandas as pd
@@ -186,7 +205,11 @@ class QualityContractService:
         for col_name, col_type in columns:
             if col_name not in sample_df.columns:
                 continue
-            pa_columns[col_name] = pa.Column(nullable=True, coerce=True)
+            pa_dtype = self._duckdb_type_to_pandera(col_type)
+            if pa_dtype is not None:
+                pa_columns[col_name] = pa.Column(dtype=pa_dtype, nullable=True, coerce=True)
+            else:
+                pa_columns[col_name] = pa.Column(nullable=True, coerce=True)
 
         schema = pa.DataFrameSchema(pa_columns, coerce=True)
 
