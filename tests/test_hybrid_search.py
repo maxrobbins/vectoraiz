@@ -463,19 +463,18 @@ class TestMinScoreFiltering:
 
 
 class TestRerankerTimeoutFallback:
-    """Reranker timeout should return un-reranked results gracefully."""
+    """Reranker timeout should return un-reranked results immediately."""
 
-    def test_timeout_returns_unreranked(self):
-        """When predict() times out, returns original order."""
+    def test_timeout_returns_unreranked_within_bounded_time(self):
+        """When predict() times out, method returns within timeout + buffer."""
         from app.services.reranker_service import RerankerService
 
         service = RerankerService()
 
-        # Mock model that sleeps longer than timeout
         mock_model = MagicMock()
 
         def slow_predict(pairs):
-            time.sleep(2)  # Sleep 2 seconds
+            time.sleep(5)  # Sleep far longer than timeout
             return [0.5] * len(pairs)
 
         mock_model.predict.side_effect = slow_predict
@@ -486,11 +485,21 @@ class TestRerankerTimeoutFallback:
             {"text_content": "doc B", "score": 0.6},
         ]
 
+        timeout_ms = 100
+
         with patch("app.services.reranker_service.settings") as mock_settings:
             mock_settings.reranker_top_k = 10
-            mock_settings.reranker_timeout_ms = 100  # 100ms timeout
+            mock_settings.reranker_timeout_ms = timeout_ms
 
+            start = time.time()
             result = service.rerank("query", docs, top_k=2)
+            elapsed = time.time() - start
+
+        # Must return within timeout + 0.5s buffer (NOT wait for the 5s sleep)
+        timeout_sec = timeout_ms / 1000.0
+        assert elapsed < timeout_sec + 0.5, (
+            f"rerank() took {elapsed:.2f}s, expected < {timeout_sec + 0.5}s"
+        )
 
         # Should return un-reranked docs (no rerank_score)
         assert len(result) == 2

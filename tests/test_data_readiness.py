@@ -310,37 +310,52 @@ class TestPipelineSteps:
 class TestTypeInvalidDataValidity:
     """Type-invalid data should produce validity score < 1.0."""
 
-    def test_strings_in_int_column_lowers_validity(self, tmp_path):
-        """Strings in an INTEGER column should produce validity < 1.0."""
+    def test_clean_data_has_perfect_validity(self, tmp_path):
+        """A clean dataset with valid types should produce validity == 1.0."""
+        import pandas as pd
         from app.services.quality_contract_service import QualityContractService
 
-        # Create CSV with type-invalid data: 'abc' in an integer column
-        csv_path = tmp_path / "bad_types.csv"
-        lines = ["id,value\n"]
-        for i in range(50):
-            lines.append(f"{i},{i * 10}\n")
-        # Inject invalid strings into the integer column
-        for i in range(50, 70):
-            lines.append(f"{i},not_a_number\n")
-        csv_path.write_text("".join(lines))
+        svc = QualityContractService()
+
+        # Clean data: all values are valid integers
+        df = pd.DataFrame({"id": list(range(50)), "value": [i * 10 for i in range(50)]})
+
+        # Mock DuckDB connection so _check_validity fetches our DataFrame
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchdf.return_value = df
+
+        mock_duckdb = MagicMock()
+        mock_duckdb.connection = mock_conn
+
+        columns = [("id", "INTEGER"), ("value", "INTEGER")]
+        result = svc._check_validity(mock_duckdb, "unused_read_func", columns)
+        assert result.score == 1.0
+
+    def test_strings_in_int_column_lowers_validity(self, tmp_path):
+        """Strings in an INTEGER column should produce validity < 1.0."""
+        import pandas as pd
+        from app.services.quality_contract_service import QualityContractService
 
         svc = QualityContractService()
-        svc.output_dir = tmp_path / "processed"
-        svc.output_dir.mkdir()
-        dataset_id = csv_path.stem
 
-        def _patched_ctx():
-            return _mock_duckdb_for_file(csv_path)
+        # Mixed data: first 50 rows are valid ints, next 20 are strings.
+        # DuckDB would infer VARCHAR for this, but we pass explicit INTEGER
+        # column types to prove Pandera's type mapping catches the violation.
+        values = [i * 10 for i in range(50)] + ["not_a_number"] * 20
+        df = pd.DataFrame({"id": list(range(70)), "value": values})
 
-        with patch("app.services.quality_contract_service.ephemeral_duckdb_service", _patched_ctx):
-            with patch.object(settings, "data_directory", str(tmp_path)):
-                scorecard = svc.validate_dataset(dataset_id)
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchdf.return_value = df
 
-        # DuckDB reads 'value' as VARCHAR when it contains mixed types,
-        # so Pandera dtype=Int64 coercion should fail for non-numeric strings.
-        # If the type mapping is working, validity should detect issues.
-        assert scorecard.validity.score <= 1.0
-        assert scorecard.dataset_id == dataset_id
+        mock_duckdb = MagicMock()
+        mock_duckdb.connection = mock_conn
+
+        # Tell Pandera the column is INTEGER → maps to pa.Int64
+        columns = [("id", "INTEGER"), ("value", "INTEGER")]
+        result = svc._check_validity(mock_duckdb, "unused_read_func", columns)
+
+        # Score must be strictly less than 1.0 — the type violation is detected
+        assert result.score < 1.0
 
 
 class TestPipelineCallsScanStructured:
