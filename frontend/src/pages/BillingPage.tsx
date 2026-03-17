@@ -341,7 +341,7 @@ const BillingPage = () => {
       )}
 
       {/* Recovery Banner */}
-      {accountInfo?.has_account === false && (!credits || credits.balance_usd === 0) && !verifyingMagicLink && (
+      {accountInfo?.has_account === false && !verifyingMagicLink && (
         <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-3">
           {!showRecoveryForm && !recoveryEmailSent ? (
             <button
