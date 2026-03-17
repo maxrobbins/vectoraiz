@@ -14,6 +14,7 @@ BQ-VZ-SERIAL-CLIENT
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -35,6 +36,7 @@ from app.services.serial_store import (
 )
 from app.services.serial_client import SerialClient, MeterResult
 from app.services.offline_queue import OfflineQueue, get_offline_queue
+from app.services.auto_reload_service import check_auto_reload
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +194,8 @@ class SerialMeteringStrategy:
         # Success
         if result.allowed:
             self._store.record_success()
+            # Fire-and-forget: check if auto-reload should trigger
+            asyncio.create_task(check_auto_reload())
             return MeterDecision(allowed=True, category=category)
 
         # Denied by server

@@ -184,6 +184,13 @@ const BillingPage = () => {
     // Handle Stripe redirect params
     if (searchParams.get("credits") === "success") {
       toast({ title: "Credits added successfully!", description: "Your allAI credits have been added." });
+      // Clear pending auto-reload since purchase completed
+      if (apiKey) {
+        fetch(`${getApiUrl()}/api/allai/credits/auto-reload/pending`, {
+          method: "DELETE",
+          headers: { "X-API-Key": apiKey },
+        }).then(() => setPendingReload(null)).catch(() => {});
+      }
       searchParams.delete("credits");
       setSearchParams(searchParams, { replace: true });
     } else if (searchParams.get("credits") === "cancelled") {

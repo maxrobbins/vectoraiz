@@ -17,7 +17,7 @@ from app.auth.api_key_auth import get_current_user, AuthenticatedUser
 from app.config import settings
 from app.services.serial_client import SerialClient
 from app.services.serial_store import get_serial_store, ACTIVE, DEGRADED
-from app.services.auto_reload_service import _read_pending as read_pending_reload
+from app.services.auto_reload_service import _read_pending as read_pending_reload, PENDING_PATH as _PENDING_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,16 @@ async def get_auto_reload_pending(user: AuthenticatedUser = Depends(get_current_
     if not pending or not pending.get("checkout_url"):
         return {"pending": False}
     return {"pending": True, **pending}
+
+
+@router.delete("/credits/auto-reload/pending")
+async def clear_auto_reload_pending(user: AuthenticatedUser = Depends(get_current_user)):
+    """Clear the pending auto-reload checkout session (user dismissed or completed purchase)."""
+    try:
+        os.remove(_PENDING_PATH)
+    except FileNotFoundError:
+        pass
+    return {"cleared": True}
 
 
 @router.get("/credits/auto-reload")
