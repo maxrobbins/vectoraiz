@@ -20,6 +20,7 @@ SPEC: ALLAI-PERSONALITY-SPEC-v2.1 Section 5
 
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from app.models.copilot import StateSnapshot
@@ -124,6 +125,8 @@ class CoPilotContextManager:
         if active_dataset_id:
             dataset_summary = self._get_dataset_detail(active_dataset_id)
 
+        full_schema_graph = self._build_full_schema_graph(active_dataset_id=active_dataset_id)
+
         # Tone mode resolution
         tone_str = prefs.get("tone_mode")
         tone_mode = resolve_tone_mode(user_preference=tone_str)
@@ -149,6 +152,7 @@ class CoPilotContextManager:
             selection=selection,
             dataset_summary=dataset_summary,
             dataset_list=dataset_list,
+            full_schema_graph=full_schema_graph,
             connected_mode=connected_mode,
             vectorization_enabled=vectorization_enabled,
             qdrant_status=qdrant_status,
@@ -243,6 +247,7 @@ class CoPilotContextManager:
             record = svc.get_dataset(dataset_id)
             if not record:
                 return {"dataset_id": dataset_id, "status": "not_found"}
+            column_names, dtypes = CoPilotContextManager._extract_column_metadata(record)
             return {
                 "dataset_id": record.id,
                 "filename": record.original_filename,
@@ -250,14 +255,253 @@ class CoPilotContextManager:
                 "status": record.status.value if hasattr(record.status, "value") else str(record.status),
                 "rows": record.metadata.get("row_count"),
                 "columns": record.metadata.get("column_count"),
-                "column_names": record.metadata.get("column_names", []),
-                "dtypes": record.metadata.get("dtypes", {}),
+                "column_names": column_names,
+                "dtypes": dtypes,
                 "size_bytes": record.file_size_bytes,
                 "created_at": record.created_at.isoformat() if record.created_at else None,
             }
         except Exception as e:
             logger.warning("Failed to fetch dataset detail for %s: %s", dataset_id, e)
             return {"dataset_id": dataset_id, "status": "error", "note": str(e)}
+
+    @staticmethod
+    def _build_full_schema_graph(active_dataset_id: Optional[str] = None) -> Dict[str, Any]:
+        """Collect schemas for all SQL-ready datasets and infer likely joins."""
+        try:
+            from app.services.processing_service import get_processing_service
+
+            svc = get_processing_service()
+            records = svc.list_datasets()
+            ready_records = [
+                record
+                for record in records
+                if CoPilotContextManager._is_queryable_dataset(record)
+            ]
+
+            tables = [
+                CoPilotContextManager._build_table_schema(record)
+                for record in ready_records
+            ]
+            joins = CoPilotContextManager._detect_likely_joins(tables)
+
+            if active_dataset_id:
+                tables.sort(
+                    key=lambda table: (
+                        table.get("dataset_id") != active_dataset_id,
+                        table.get("display_name", ""),
+                    )
+                )
+
+            return {
+                "active_dataset_id": active_dataset_id,
+                "table_count": len(tables),
+                "tables": tables,
+                "joins": joins,
+            }
+        except Exception as e:
+            logger.warning("Failed to build full schema graph: %s", e)
+            return {
+                "active_dataset_id": active_dataset_id,
+                "table_count": 0,
+                "tables": [],
+                "joins": [],
+                "status": "error",
+                "note": str(e),
+            }
+
+    @staticmethod
+    def _is_queryable_dataset(record: Any) -> bool:
+        """Return True when the dataset can be queried as a DuckDB view."""
+        status = record.status.value if hasattr(record.status, "value") else str(record.status)
+        return status == "ready" and bool(record.processed_path)
+
+    @staticmethod
+    def _build_table_schema(record: Any) -> Dict[str, Any]:
+        """Convert a dataset record into prompt-friendly table schema metadata."""
+        column_names, dtypes = CoPilotContextManager._extract_column_metadata(record)
+        return {
+            "dataset_id": record.id,
+            "table_name": f"dataset_{record.id}",
+            "display_name": CoPilotContextManager._dataset_display_name(record.original_filename, record.id),
+            "filename": record.original_filename,
+            "status": record.status.value if hasattr(record.status, "value") else str(record.status),
+            "row_count": record.metadata.get("row_count"),
+            "column_count": record.metadata.get("column_count"),
+            "columns": [
+                {"name": column_name, "type": dtypes.get(column_name)}
+                for column_name in column_names
+            ],
+        }
+
+    @staticmethod
+    def _extract_column_metadata(record: Any) -> tuple[List[str], Dict[str, Any]]:
+        """Extract column names and dtypes from available dataset metadata."""
+        column_names = record.metadata.get("column_names", []) or []
+        dtypes = dict(record.metadata.get("dtypes", {}) or {})
+        columns_info = record.metadata.get("columns", []) or []
+
+        if not column_names and columns_info:
+            column_names = [c.get("name", "?") for c in columns_info if c.get("name")]
+
+        if columns_info:
+            for column in columns_info:
+                name = column.get("name")
+                if name and not dtypes.get(name):
+                    dtypes[name] = column.get("type")
+
+        return column_names, dtypes
+
+    @staticmethod
+    def _detect_likely_joins(tables: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Infer likely foreign-key joins across loaded dataset tables."""
+        joins: List[Dict[str, Any]] = []
+        seen: set[tuple[str, str, str, str]] = set()
+        table_index = {
+            table["dataset_id"]: {
+                "table_name": table["table_name"],
+                "display_name": table["display_name"],
+                "columns": [col.get("name") for col in table.get("columns", []) if col.get("name")],
+                "column_set": {col.get("name") for col in table.get("columns", []) if col.get("name")},
+                "tokens": CoPilotContextManager._dataset_name_tokens(table["display_name"]),
+            }
+            for table in tables
+        }
+
+        for source in tables:
+            source_meta = table_index[source["dataset_id"]]
+            for column_name in source_meta["columns"]:
+                normalized_column = column_name.lower()
+                if normalized_column == "id":
+                    continue
+
+                if normalized_column.endswith("_id"):
+                    fk_tokens = CoPilotContextManager._column_fk_tokens(normalized_column)
+                    for target in tables:
+                        if target["dataset_id"] == source["dataset_id"]:
+                            continue
+                        target_meta = table_index[target["dataset_id"]]
+                        if "id" not in target_meta["column_set"]:
+                            continue
+                        if CoPilotContextManager._tokens_match_target(fk_tokens, target_meta["tokens"]):
+                            CoPilotContextManager._append_join(
+                                joins,
+                                seen,
+                                source_table=source_meta["table_name"],
+                                source_display=source_meta["display_name"],
+                                source_column=column_name,
+                                target_table=target_meta["table_name"],
+                                target_display=target_meta["display_name"],
+                                target_column="id",
+                                reason="fk_name_match",
+                            )
+
+                for target in tables:
+                    if target["dataset_id"] == source["dataset_id"]:
+                        continue
+                    target_meta = table_index[target["dataset_id"]]
+                    if column_name not in target_meta["column_set"]:
+                        continue
+                    if normalized_column in {"id", "created_at", "updated_at"}:
+                        continue
+                    if source_meta["table_name"] >= target_meta["table_name"]:
+                        continue
+                    CoPilotContextManager._append_join(
+                        joins,
+                        seen,
+                        source_table=source_meta["table_name"],
+                        source_display=source_meta["display_name"],
+                        source_column=column_name,
+                        target_table=target_meta["table_name"],
+                        target_display=target_meta["display_name"],
+                        target_column=column_name,
+                        reason="shared_column_name",
+                    )
+
+        return joins
+
+    @staticmethod
+    def _append_join(
+        joins: List[Dict[str, Any]],
+        seen: set[tuple[str, str, str, str]],
+        *,
+        source_table: str,
+        source_display: str,
+        source_column: str,
+        target_table: str,
+        target_display: str,
+        target_column: str,
+        reason: str,
+    ) -> None:
+        key = (source_table, source_column, target_table, target_column)
+        if key in seen:
+            return
+        seen.add(key)
+        joins.append(
+            {
+                "from_table": source_table,
+                "from_display_name": source_display,
+                "from_column": source_column,
+                "to_table": target_table,
+                "to_display_name": target_display,
+                "to_column": target_column,
+                "reason": reason,
+            }
+        )
+
+    @staticmethod
+    def _dataset_display_name(filename: str, dataset_id: str) -> str:
+        """Use the filename stem as the human-readable dataset label."""
+        stem = str(filename or "").strip().rsplit(".", 1)[0].strip()
+        return stem or dataset_id
+
+    @staticmethod
+    def _dataset_name_tokens(name: str) -> set[str]:
+        """Normalize a dataset label into singular/plural-insensitive tokens."""
+        raw_tokens = [token for token in re.split(r"[^a-z0-9]+", name.lower()) if token]
+        expanded: set[str] = set()
+        for token in raw_tokens:
+            expanded.add(token)
+            singular = CoPilotContextManager._singularize_token(token)
+            if singular:
+                expanded.add(singular)
+        return expanded
+
+    @staticmethod
+    def _column_fk_tokens(column_name: str) -> set[str]:
+        """Extract tokens from a foreign-key-looking column name."""
+        base = column_name[:-3] if column_name.endswith("_id") else column_name
+        raw_tokens = [token for token in base.split("_") if token and token not in {"issuer", "debtor", "source", "target"}]
+        expanded: set[str] = set()
+        for token in raw_tokens:
+            expanded.add(token)
+            singular = CoPilotContextManager._singularize_token(token)
+            if singular:
+                expanded.add(singular)
+        return expanded
+
+    @staticmethod
+    def _tokens_match_target(source_tokens: set[str], target_tokens: set[str]) -> bool:
+        """Match FK-ish column tokens against target dataset name tokens."""
+        if not source_tokens or not target_tokens:
+            return False
+        overlap = source_tokens & target_tokens
+        if len(overlap) >= 2:
+            return True
+        if len(overlap) == 1:
+            shared = next(iter(overlap))
+            return len(shared) >= 5
+        return False
+
+    @staticmethod
+    def _singularize_token(token: str) -> str:
+        """Basic singularization heuristic for dataset/column matching."""
+        if token.endswith("ies") and len(token) > 3:
+            return token[:-3] + "y"
+        if token.endswith("ses") and len(token) > 3:
+            return token[:-2]
+        if token.endswith("s") and not token.endswith("ss") and len(token) > 3:
+            return token[:-1]
+        return token
 
 
 def _check_vectorization_enabled() -> bool:

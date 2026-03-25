@@ -69,6 +69,7 @@ class AllieContext:
     # Dataset (if applicable)
     dataset_summary: Optional[Dict[str, Any]] = None
     dataset_list: List[Dict[str, Any]] = field(default_factory=list)
+    full_schema_graph: Optional[Dict[str, Any]] = None
 
     # System state
     connected_mode: bool = True
@@ -112,6 +113,7 @@ class PromptFactory:
     """
 
     LAYER_SEPARATOR = "\n\n---\n\n"
+    _MAX_SCHEMA_COLUMNS_PER_TABLE = 25
 
     def build_system_prompt(
         self,
@@ -465,27 +467,10 @@ Never tell a user that the Data Request Board is for requesting access to existi
             parts.append(f"""
 **Active Dataset Detail:**
 {_format_dict(ds)}""")
-            ds_id = ds.get("dataset_id") or ds.get("id", "")
-            column_names = ds.get("column_names") or ds.get("columns")
-            if column_names:
-                if isinstance(column_names, list):
-                    col_str = ", ".join(column_names)
-                else:
-                    col_str = str(column_names)
-                parts.append(f"""
-**SQL Engine: DuckDB (NOT SQLite, NOT PostgreSQL)**
-- Date functions: date_diff('day', start, end), date_part('year', col), date_trunc('month', col), current_date, epoch(col)
-- DO NOT use: julianday(), strftime() with SQLite syntax, datetime(), date() SQLite-style
-- String functions: concat(), length(), lower(), upper(), substring(), regexp_matches()
-- Aggregates: approx_count_distinct(), list_agg(), string_agg()
-- Type casting: CAST(col AS INTEGER), col::INTEGER, TRY_CAST(col AS DATE)
-- NULLs: coalesce(), ifnull(), nullif()
-- For date arithmetic use INTERVAL: col + INTERVAL 30 DAY
-- For epoch conversion: epoch(timestamp_col), make_timestamp(epoch_value)
 
-**SQL Column Reference (use these EXACT names in queries):**
-- Table: dataset_{ds_id}
-- Columns: {col_str}""")
+        schema_reference = self._build_schema_reference(context)
+        if schema_reference:
+            parts.append(schema_reference)
 
         parts.append(f"""
 **System State:**
@@ -510,6 +495,95 @@ Never tell a user that the Data Request Board is for requesting access to existi
 **Recent Events:**
 {events_str}""")
 
+        return "\n".join(parts)
+
+    def _build_schema_reference(self, context: AllieContext) -> str:
+        """Render available SQL tables and likely joins into the prompt."""
+        graph = context.full_schema_graph or {}
+        tables = graph.get("tables") or []
+        joins = graph.get("joins") or []
+
+        if not tables and context.dataset_summary:
+            ds = context.dataset_summary
+            ds_id = ds.get("dataset_id") or ds.get("id", "")
+            column_names = ds.get("column_names") or ds.get("columns") or []
+            dtypes = ds.get("dtypes") or {}
+
+            if isinstance(column_names, list) and column_names:
+                tables = [{
+                    "table_name": f"dataset_{ds_id}",
+                    "display_name": _derive_dataset_display_name(ds),
+                    "row_count": ds.get("rows"),
+                    "columns": [
+                        {"name": col, "type": dtypes.get(col)}
+                        for col in column_names
+                    ],
+                }]
+
+        if not tables:
+            return ""
+
+        table_lines = []
+        for table in tables:
+            column_descriptions = []
+            for column in (table.get("columns") or [])[: self._MAX_SCHEMA_COLUMNS_PER_TABLE]:
+                column_name = column.get("name", "?")
+                column_type = column.get("type")
+                if column_type:
+                    column_descriptions.append(f"{column_name} ({column_type})")
+                else:
+                    column_descriptions.append(column_name)
+
+            remaining = len(table.get("columns") or []) - len(column_descriptions)
+            if remaining > 0:
+                column_descriptions.append(f"... (+{remaining} more)")
+
+            row_count = table.get("row_count")
+            row_count_label = f"{row_count} rows" if row_count is not None else "row count unknown"
+            display_name = table.get("display_name") or table.get("filename") or table.get("dataset_id", "?")
+            table_lines.append(
+                f"- {table.get('table_name')} ({display_name}): {row_count_label} | "
+                + ", ".join(column_descriptions)
+            )
+
+        join_lines = []
+        for join in joins:
+            join_lines.append(
+                f"- {join.get('from_table')}.{join.get('from_column')} "
+                f"-> {join.get('to_table')}.{join.get('to_column')}"
+            )
+
+        guidance = (
+            "Use these table and column names EXACTLY. Do NOT waste tool calls "
+            "discovering schemas"
+        )
+        if len(tables) > 1:
+            guidance += " — all table structures and likely joins are provided above."
+        else:
+            guidance += " — the table structure is provided above."
+
+        parts = ["""
+**SQL Engine: DuckDB (NOT SQLite, NOT PostgreSQL)**
+- Date functions: date_diff('day', start, end), date_part('year', col), date_trunc('month', col), current_date, epoch(col)
+- DO NOT use: julianday(), strftime() with SQLite syntax, datetime(), date() SQLite-style
+- String functions: concat(), length(), lower(), upper(), substring(), regexp_matches()
+- Aggregates: approx_count_distinct(), list_agg(), string_agg()
+- Type casting: CAST(col AS INTEGER), col::INTEGER, TRY_CAST(col AS DATE)
+- NULLs: coalesce(), ifnull(), nullif()
+- For date arithmetic use INTERVAL: col + INTERVAL 30 DAY
+- For epoch conversion: epoch(timestamp_col), make_timestamp(epoch_value)
+
+**SQL Column Reference (use these EXACT names in queries):**
+
+**Available Tables:**
+""" + "\n".join(table_lines)]
+
+        if join_lines:
+            parts.append("""
+**Detected Joins:**
+""" + "\n".join(join_lines))
+
+        parts.append(guidance)
         return "\n".join(parts)
 
     # ----- Layer 5: Personality / Tone -----
@@ -594,6 +668,16 @@ def _format_dict(d: Dict[str, Any], indent: int = 0) -> str:
         else:
             lines.append(f"{prefix}- {k}: {v}")
     return "\n".join(lines)
+
+
+def _derive_dataset_display_name(dataset: Dict[str, Any]) -> str:
+    """Derive a stable human-readable label for a dataset in prompt text."""
+    filename = str(dataset.get("filename") or dataset.get("original_filename") or "").strip()
+    if not filename:
+        return str(dataset.get("dataset_id") or dataset.get("id") or "dataset")
+
+    stem = filename.rsplit(".", 1)[0].strip()
+    return stem or filename
 
 
 def resolve_tone_mode(
