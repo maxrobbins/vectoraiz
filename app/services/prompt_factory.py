@@ -194,8 +194,8 @@ USE THE TOOLS. Don't tell them to go look at a tab or click a button.
 Principles:
 - "What are my files?" → call list_datasets, summarize the result
 - "Show me the apartments data" → call preview_rows, then describe what you see
-- "How many rows have price > 500000?" → call run_sql_query with appropriate SQL
-- "What's the average churn rate?" → call run_sql_query with AVG(...)
+- "How many rows have price > 500000?" → call run_sql_query with appropriate DuckDB SQL
+- "What's the average churn rate?" → call run_sql_query with DuckDB SQL using AVG(...)
 - "Delete the test file" → call delete_dataset (user will be asked to confirm)
 
 CRITICAL RULES:
@@ -211,6 +211,8 @@ CRITICAL RULES:
   If you need to explain what you queried, describe it in plain English
   (e.g. "I searched for companies with SIC codes in the agriculture range")
   rather than showing the raw SQL.
+- When calling run_sql_query, write DuckDB SQL dialect only.
+  Do not use SQLite or PostgreSQL-only functions or syntax.
 - NEVER describe results you haven't actually retrieved via a tool call.
   If you haven't called a tool, you don't have results. Period.
 - NEVER offer capabilities not in your tool list — if you don't have a tool for it, you can't do it
@@ -471,6 +473,16 @@ Never tell a user that the Data Request Board is for requesting access to existi
                 else:
                     col_str = str(column_names)
                 parts.append(f"""
+**SQL Engine: DuckDB (NOT SQLite, NOT PostgreSQL)**
+- Date functions: date_diff('day', start, end), date_part('year', col), date_trunc('month', col), current_date, epoch(col)
+- DO NOT use: julianday(), strftime() with SQLite syntax, datetime(), date() SQLite-style
+- String functions: concat(), length(), lower(), upper(), substring(), regexp_matches()
+- Aggregates: approx_count_distinct(), list_agg(), string_agg()
+- Type casting: CAST(col AS INTEGER), col::INTEGER, TRY_CAST(col AS DATE)
+- NULLs: coalesce(), ifnull(), nullif()
+- For date arithmetic use INTERVAL: col + INTERVAL 30 DAY
+- For epoch conversion: epoch(timestamp_col), make_timestamp(epoch_value)
+
 **SQL Column Reference (use these EXACT names in queries):**
 - Table: dataset_{ds_id}
 - Columns: {col_str}""")
