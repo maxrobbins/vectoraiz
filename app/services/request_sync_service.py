@@ -19,7 +19,7 @@ import httpx
 from sqlmodel import select
 
 from app.core.database import get_session_context
-from app.models.cached_requests import CachedRequest
+from app.models.cached_requests import CachedRequest, SyncState
 
 logger = logging.getLogger(__name__)
 
@@ -124,23 +124,26 @@ def upsert_cached_requests(items: List[Dict[str, Any]]) -> Tuple[int, int]:
 
 
 def get_sync_cursor() -> Optional[str]:
-    """
-    Derive the sync cursor from the latest synced_at timestamp.
-
-    The ai.market API uses opaque cursors, but for our local state we track
-    the most recent synced_at so the caller can pass it on the next poll.
-    We store the cursor in a simple convention: the marketplace_request_id
-    of the most recently synced item (sorted by synced_at desc).
-    """
+    """Read the last opaque cursor returned by the upstream API."""
     with get_session_context() as session:
-        result = session.exec(
-            select(CachedRequest)
-            .order_by(CachedRequest.synced_at.desc())  # type: ignore[union-attr]
-            .limit(1)
-        ).first()
-        if result:
-            return result.marketplace_request_id
+        state = session.exec(select(SyncState).limit(1)).first()
+        if state:
+            return state.last_cursor
     return None
+
+
+def save_sync_cursor(cursor: Optional[str]) -> None:
+    """Persist the opaque cursor returned by the upstream API."""
+    now = datetime.now(timezone.utc)
+    with get_session_context() as session:
+        state = session.exec(select(SyncState).limit(1)).first()
+        if state:
+            state.last_cursor = cursor
+            state.last_synced_at = now
+        else:
+            state = SyncState(last_cursor=cursor, last_synced_at=now)
+        session.add(state)
+        session.commit()
 
 
 async def full_sync(
@@ -148,11 +151,14 @@ async def full_sync(
     auth_token: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Complete sync loop: get cursor → poll → upsert → return summary.
+    Complete sync loop: get cursor → poll → upsert → save cursor → return summary.
     """
     cursor = get_sync_cursor()
     items, next_cursor = await poll_requests(api_base_url, cursor, auth_token)
     new_count, updated_count = upsert_cached_requests(items)
+
+    if next_cursor is not None:
+        save_sync_cursor(next_cursor)
 
     return {
         "synced": len(items),

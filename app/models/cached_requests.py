@@ -10,6 +10,7 @@ Phase: BQ-VZ-REQUEST-ENGINE Slice B
 Created: 2026-04-02
 """
 
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
@@ -31,7 +32,7 @@ class CachedRequest(SQLModel, table=True):
 
     id: str = Field(primary_key=True, max_length=36)
     marketplace_request_id: str = Field(
-        max_length=36, unique=True, index=True,
+        max_length=36, unique=True,
         description="UUID from ai.market — dedup key",
     )
     title: str = Field(max_length=512)
@@ -55,7 +56,7 @@ class ResponseDraft(SQLModel, table=True):
     cached_request_id: str = Field(
         max_length=36, index=True, foreign_key="cached_requests.id",
     )
-    matched_dataset_id: str = Field(max_length=36, index=True)
+    matched_dataset_id: str = Field(max_length=36, index=True, foreign_key="dataset_records.id")
     title: str = Field(max_length=512)
     description: str = Field(default="", sa_column=Column(Text, default=""))
     score: float = Field(default=0.0)
@@ -65,3 +66,13 @@ class ResponseDraft(SQLModel, table=True):
     internal_notes: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class SyncState(SQLModel, table=True):
+    """Stores opaque cursor state for incremental sync with ai.market."""
+
+    __tablename__ = "request_engine_sync_state"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
+    last_cursor: Optional[str] = Field(default=None, nullable=True)
+    last_synced_at: Optional[datetime] = Field(default=None, nullable=True)

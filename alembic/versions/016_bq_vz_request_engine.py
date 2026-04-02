@@ -31,7 +31,7 @@ def upgrade() -> None:
         sa.Column("synced_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("match_run_at", sa.DateTime(), nullable=True),
     )
-    op.create_index("ix_cached_requests_marketplace_id", "cached_requests", ["marketplace_request_id"])
+    # marketplace_request_id already has a unique constraint which creates an index
     op.create_index("ix_cached_requests_status", "cached_requests", ["status"])
 
     op.create_table(

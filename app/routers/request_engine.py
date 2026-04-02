@@ -11,6 +11,7 @@ Created: 2026-04-02
 
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -32,6 +33,9 @@ from app.services.request_match_service import match_request
 from app.services.request_sync_service import full_sync
 
 logger = logging.getLogger(__name__)
+
+AIMARKET_API_BASE_URL = os.environ.get("AIMARKET_API_BASE_URL", "https://api.ai.market")
+AIMARKET_SYNC_TOKEN = os.environ.get("AIMARKET_SYNC_TOKEN")
 
 router = APIRouter()
 
@@ -68,12 +72,9 @@ def list_cached_requests(
     response_model=SyncResult,
     summary="Trigger a sync from ai.market",
 )
-async def trigger_sync(
-    api_base_url: str = Query(..., description="ai.market API base URL"),
-    auth_token: Optional[str] = Query(None, description="Bearer token for ai.market"),
-):
+async def trigger_sync():
     try:
-        result = await full_sync(api_base_url, auth_token)
+        result = await full_sync(AIMARKET_API_BASE_URL, AIMARKET_SYNC_TOKEN)
         return SyncResult(**result)
     except Exception as exc:
         logger.error("Sync failed: %s", exc)
@@ -134,6 +135,14 @@ def create_draft(
     ).first()
     if not cached:
         raise HTTPException(status_code=404, detail="Cached request not found")
+
+    dataset = db.exec(
+        select(DatasetRecord).where(DatasetRecord.id == body.matched_dataset_id)
+    ).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    if dataset.status != "ready":
+        raise HTTPException(status_code=409, detail="Dataset is not ready")
 
     draft = ResponseDraft(
         id=str(uuid.uuid4()),

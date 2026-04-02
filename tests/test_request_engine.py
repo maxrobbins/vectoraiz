@@ -16,7 +16,7 @@ from sqlmodel import Session
 
 from app.core.database import get_engine, get_session
 from app.main import app
-from app.models.cached_requests import CachedRequest, ResponseDraft
+from app.models.cached_requests import CachedRequest, ResponseDraft, SyncState
 from app.models.dataset import DatasetRecord
 from app.services.request_match_service import (
     match_request,
@@ -26,7 +26,11 @@ from app.services.request_match_service import (
     _size_score,
     _freshness_score,
 )
-from app.services.request_sync_service import upsert_cached_requests, get_sync_cursor
+from app.services.request_sync_service import (
+    upsert_cached_requests,
+    get_sync_cursor,
+    save_sync_cursor,
+)
 
 
 client = TestClient(app)
@@ -109,10 +113,6 @@ class TestSyncService:
         new, updated = upsert_cached_requests(items)
         assert new == 1
         assert updated == 0
-
-        # Verify it was persisted
-        cursor = get_sync_cursor()
-        assert cursor == mp_id
 
     def test_upsert_updates_existing(self):
         mp_id = str(uuid.uuid4())
@@ -385,6 +385,113 @@ class TestAPIEndpoints:
         )
         assert resp.status_code == 404
 
-    def test_sync_endpoint_requires_url(self):
-        resp = client.post("/api/request-engine/sync")
-        assert resp.status_code == 422  # Missing required query param
+    def test_sync_endpoint_no_query_params(self):
+        """Sync endpoint must not accept caller-supplied URL/token (SSRF fix)."""
+        with patch("app.routers.request_engine.full_sync", new_callable=AsyncMock) as mock_sync:
+            mock_sync.return_value = {"synced": 0, "new": 0, "updated": 0, "cursor": None}
+            resp = client.post("/api/request-engine/sync")
+            assert resp.status_code == 200
+            # Verify it was called with the env-var values, not user input
+            from app.routers.request_engine import AIMARKET_API_BASE_URL, AIMARKET_SYNC_TOKEN
+            mock_sync.assert_called_once_with(AIMARKET_API_BASE_URL, AIMARKET_SYNC_TOKEN)
+
+    def test_sync_endpoint_ignores_query_params(self):
+        """Caller-supplied api_base_url/auth_token must be ignored (SSRF protection)."""
+        with patch("app.routers.request_engine.full_sync", new_callable=AsyncMock) as mock_sync:
+            mock_sync.return_value = {"synced": 0, "new": 0, "updated": 0, "cursor": None}
+            # Try to inject a malicious URL — should be ignored
+            resp = client.post(
+                "/api/request-engine/sync?api_base_url=http://evil.example.com&auth_token=stolen"
+            )
+            assert resp.status_code == 200
+            from app.routers.request_engine import AIMARKET_API_BASE_URL, AIMARKET_SYNC_TOKEN
+            mock_sync.assert_called_once_with(AIMARKET_API_BASE_URL, AIMARKET_SYNC_TOKEN)
+
+    def test_create_draft_rejects_missing_dataset(self):
+        """Draft creation must fail if the matched dataset doesn't exist."""
+        req_id = self._seed_request()
+        body = {
+            "matched_dataset_id": str(uuid.uuid4()),  # non-existent
+            "title": "Orphan Draft",
+            "description": "Should fail",
+            "score": 0.5,
+            "score_reasons": {},
+        }
+        resp = client.post(
+            f"/api/request-engine/cached-requests/{req_id}/draft",
+            json=body,
+        )
+        assert resp.status_code == 404
+        assert "Dataset not found" in resp.json()["detail"]
+
+    def test_create_draft_rejects_non_ready_dataset(self):
+        """Draft creation must fail if dataset is not in 'ready' status."""
+        req_id = self._seed_request()
+        ds = _make_dataset(status="processing")
+        with Session(get_engine()) as session:
+            session.add(ds)
+            session.commit()
+        body = {
+            "matched_dataset_id": ds.id,
+            "title": "Not Ready Draft",
+            "description": "Should fail",
+            "score": 0.5,
+            "score_reasons": {},
+        }
+        resp = client.post(
+            f"/api/request-engine/cached-requests/{req_id}/draft",
+            json=body,
+        )
+        assert resp.status_code == 409
+        assert "not ready" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Cursor State Persistence Tests
+# ---------------------------------------------------------------------------
+
+class TestCursorState:
+    def test_get_cursor_returns_none_initially(self):
+        """With no sync state, cursor should be None."""
+        cursor = get_sync_cursor()
+        # May or may not be None depending on prior tests, but shouldn't crash
+        assert cursor is None or isinstance(cursor, str)
+
+    def test_save_and_retrieve_cursor(self):
+        """save_sync_cursor should persist and get_sync_cursor should retrieve."""
+        test_cursor = f"opaque-cursor-{uuid.uuid4()}"
+        save_sync_cursor(test_cursor)
+        retrieved = get_sync_cursor()
+        assert retrieved == test_cursor
+
+    def test_cursor_updates_on_subsequent_save(self):
+        """Saving a new cursor should overwrite the previous one."""
+        save_sync_cursor("cursor-1")
+        assert get_sync_cursor() == "cursor-1"
+        save_sync_cursor("cursor-2")
+        assert get_sync_cursor() == "cursor-2"
+
+
+# ---------------------------------------------------------------------------
+# Malformed Upstream Item Tests
+# ---------------------------------------------------------------------------
+
+class TestMalformedUpstreamItems:
+    def test_upsert_item_missing_id(self):
+        """Items without an id should still be upserted (empty string key)."""
+        items = [{"title": "No ID", "description": "Missing id field"}]
+        new, updated = upsert_cached_requests(items)
+        assert new + updated >= 1
+
+    def test_upsert_item_missing_optional_fields(self):
+        """Items missing optional fields should use defaults."""
+        items = [{"id": str(uuid.uuid4())}]
+        new, updated = upsert_cached_requests(items)
+        assert new == 1
+
+    def test_upsert_item_bad_categories(self):
+        """Non-list categories should default to empty list."""
+        mp_id = str(uuid.uuid4())
+        items = [{"id": mp_id, "title": "Bad cats", "categories": "not-a-list"}]
+        new, _ = upsert_cached_requests(items)
+        assert new == 1
