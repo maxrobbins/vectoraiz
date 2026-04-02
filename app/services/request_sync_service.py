@@ -37,6 +37,7 @@ async def poll_requests(
     """
     all_items: List[Dict[str, Any]] = []
     cursor = sync_cursor
+    last_good_cursor = sync_cursor  # track last non-None cursor for persistence
     max_pages = 10
     headers: Dict[str, str] = {}
     if auth_token:
@@ -57,11 +58,18 @@ async def poll_requests(
             items = body.get("items", [])
             all_items.extend(items)
 
-            cursor = body.get("next_cursor")
-            if not cursor or not items:
+            next_page_cursor = body.get("next_cursor")
+            if next_page_cursor:
+                last_good_cursor = next_page_cursor
+                cursor = next_page_cursor
+            else:
+                # End of pagination — no more pages
                 break
 
-    return all_items, cursor
+            if not items:
+                break
+
+    return all_items, last_good_cursor
 
 
 def upsert_cached_requests(items: List[Dict[str, Any]]) -> Tuple[int, int]:
@@ -157,8 +165,10 @@ async def full_sync(
     items, next_cursor = await poll_requests(api_base_url, cursor, auth_token)
     new_count, updated_count = upsert_cached_requests(items)
 
-    if next_cursor is not None:
-        save_sync_cursor(next_cursor)
+    # Always persist the cursor state after sync, even if unchanged.
+    # next_cursor here is the last non-None cursor from pagination,
+    # ensuring we resume from the correct position on next sync.
+    save_sync_cursor(next_cursor)
 
     return {
         "synced": len(items),

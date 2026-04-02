@@ -495,3 +495,65 @@ class TestMalformedUpstreamItems:
         items = [{"id": mp_id, "title": "Bad cats", "categories": "not-a-list"}]
         new, _ = upsert_cached_requests(items)
         assert new == 1
+
+
+# ---------------------------------------------------------------------------
+# Multi-Page Cursor Persistence Tests
+# ---------------------------------------------------------------------------
+
+class TestMultiPageCursorPersistence:
+    """Verify cursor is correctly persisted after multi-page sync."""
+
+    @pytest.mark.asyncio
+    async def test_poll_returns_last_good_cursor_on_pagination_end(self):
+        """
+        When pagination exhausts (last page has items but next_cursor=None),
+        poll_requests should return the last non-None cursor, not None.
+        This ensures the cursor advances past already-processed pages.
+        """
+        from app.services.request_sync_service import poll_requests
+
+        # Mock httpx responses: page 1 returns cursor-B, page 2 returns None
+        responses = [
+            {
+                "items": [{"id": "req-1", "title": "Request 1"}],
+                "next_cursor": "cursor-B",
+            },
+            {
+                "items": [{"id": "req-2", "title": "Request 2"}],
+                # No next_cursor — end of pagination
+            },
+        ]
+        call_count = 0
+
+        class MockResponse:
+            def __init__(self, data):
+                self._data = data
+                self.status_code = 200
+            def raise_for_status(self):
+                pass
+            def json(self):
+                return self._data
+
+        class MockClient:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                pass
+            async def get(self, url, params=None, headers=None):
+                nonlocal call_count
+                idx = min(call_count, len(responses) - 1)
+                call_count += 1
+                return MockResponse(responses[idx])
+
+        import httpx
+        original_client = httpx.AsyncClient
+        httpx.AsyncClient = lambda **kwargs: MockClient()
+
+        try:
+            items, cursor = await poll_requests("https://api.ai.market", "cursor-A")
+            assert len(items) == 2
+            # cursor should be "cursor-B" (last non-None), NOT None
+            assert cursor == "cursor-B", f"Expected 'cursor-B', got '{cursor}'"
+        finally:
+            httpx.AsyncClient = original_client
