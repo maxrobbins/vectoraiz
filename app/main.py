@@ -778,6 +778,15 @@ def create_app() -> FastAPI:
         dependencies=admin_route_dependency,
     )
 
+    # ADMIN ONLY — request engine (BQ-VZ-REQUEST-ENGINE Slice B)
+    from app.routers.request_engine import router as request_engine_router
+    app.include_router(
+        request_engine_router,
+        prefix="/api/request-engine",
+        tags=["request-engine"],
+        dependencies=admin_route_dependency,
+    )
+
     # BQ-MCP-RAG: External LLM Connectivity — conditionally mount
     if settings.connectivity_enabled:
         from app.routers.ext import router as ext_router
