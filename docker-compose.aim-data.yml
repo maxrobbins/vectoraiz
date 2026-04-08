@@ -1,0 +1,114 @@
+# =============================================================================
+# AIM-Data — Customer Deployment (docker-compose.aim-data.yml)
+# =============================================================================
+# Three containers:
+#   1. aim-data — nginx (UI) + uvicorn (API) in one image
+#   2. postgres  — Metadata, local auth, usage tracking
+#   3. qdrant    — Vector database for semantic search
+#
+# Usage:
+#   docker compose -f docker-compose.aim-data.yml up -d
+#
+# First run: Complete setup wizard to create admin account.
+# =============================================================================
+
+services:
+  aim-data:
+    image: ghcr.io/aidotmarket/aim-data:${AIM_DATA_VERSION:-latest}
+    ports:
+      - "${AIM_DATA_PORT:-8080}:80"
+    volumes:
+      - aim-data-data:/data
+      # Optional: host directory for local file import (read-only)
+      - ${HOST_IMPORT_DIR:-./import}:/data/import:ro
+      # Optional: enables one-click auto-update from the UI
+      # Remove this line if you don't want the container to have Docker access
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - AIM_DATA_VERSION=${AIM_DATA_VERSION:-latest}
+      - AIM_DATA_MODE=${AIM_DATA_MODE:-standalone}
+      - AIM_DATA_SECRET_KEY=${AIM_DATA_SECRET_KEY:-}
+      - AIM_DATA_APIKEY_HMAC_SECRET=${AIM_DATA_APIKEY_HMAC_SECRET:-}
+      - DATABASE_URL=postgresql://vectoraiz:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/vectoraiz
+      - QDRANT_HOST=qdrant
+      - AIM_DATA_MAX_CONCURRENT_PROCESSING=${AIM_DATA_MAX_CONCURRENT_PROCESSING:-2}
+      - QDRANT_PORT=6333
+      - AIM_DATA_AUTH_ENABLED=true
+      - AIM_DATA_CONNECTIVITY_ENABLED=true
+      - AIM_DATA_ALLAI_ENABLED=${AIM_DATA_ALLAI_ENABLED:-true}
+      - AIM_DATA_MARKETPLACE_ENABLED=${AIM_DATA_MARKETPLACE_ENABLED:-true}
+      # Allie / ai.market integration
+      - AIM_DATA_AI_MARKET_URL=${AIM_DATA_AI_MARKET_URL:-}
+      - AIM_DATA_ALLIE_PROVIDER=${AIM_DATA_ALLIE_PROVIDER:-}
+      # Serial auto-activation (env var fallback — normally provisioned via serial.json in /data volume)
+      - AIM_DATA_SERIAL=${AIM_DATA_SERIAL:-}
+      - AIM_DATA_BOOTSTRAP_TOKEN=${AIM_DATA_BOOTSTRAP_TOKEN:-}
+      - AIM_DATA_INTERNAL_API_KEY=${AIM_DATA_INTERNAL_API_KEY:-}
+      # BQ-VZ-DB-CONNECT: Max rows per database extraction (default 5M)
+      - DB_EXTRACT_MAX_ROWS=${DB_EXTRACT_MAX_ROWS:-5000000}
+      # Device identity keystore passphrase
+      - AIM_DATA_KEYSTORE_PASSPHRASE=${AIM_DATA_KEYSTORE_PASSPHRASE:-}
+      # BQ-VZ-DB-CONNECT: To connect to databases on the Docker host, use:
+      #   - Docker Desktop (Mac/Win): host.docker.internal
+      #   - Linux: add extra_hosts: ["host.docker.internal:host-gateway"]
+      #   - Same Docker network: use the service name (e.g., "postgres")
+    cap_add:
+      - SYS_PTRACE
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  postgres:
+    image: postgres:16-alpine
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=vectoraiz
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      - POSTGRES_DB=vectoraiz
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vectoraiz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+volumes:
+  aim-data-data:
+  postgres-data:
+  qdrant-storage:
