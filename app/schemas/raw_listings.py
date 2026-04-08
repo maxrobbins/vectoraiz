@@ -27,6 +27,7 @@ class RawFileResponse(BaseModel):
     file_size_bytes: int
     content_hash: str
     mime_type: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
 

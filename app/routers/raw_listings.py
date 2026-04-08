@@ -49,6 +49,7 @@ def _file_response(raw_file) -> RawFileResponse:
         file_size_bytes=raw_file.file_size_bytes,
         content_hash=raw_file.content_hash,
         mime_type=raw_file.mime_type,
+        metadata=raw_file.metadata_,
         created_at=raw_file.created_at,
         updated_at=raw_file.updated_at,
     )
@@ -189,7 +190,7 @@ async def generate_file_metadata(
     svc: RawFileService = Depends(get_raw_file_service),
 ):
     try:
-        metadata = svc.generate_metadata(file_id)
+        metadata = await svc.generate_metadata(file_id)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return MetadataResponse(file_id=file_id, auto_metadata=metadata)

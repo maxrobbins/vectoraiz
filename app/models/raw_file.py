@@ -10,9 +10,9 @@ Created: 2026-03-03
 
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
-from sqlalchemy import BigInteger
+from sqlalchemy import BigInteger, JSON
 from sqlmodel import Field, SQLModel, Column
 
 
@@ -32,5 +32,9 @@ class RawFile(SQLModel, table=True):
     file_size_bytes: int = Field(sa_column=Column(BigInteger, nullable=False))
     content_hash: str = Field(max_length=64)  # SHA256 hex digest
     mime_type: Optional[str] = Field(default=None, nullable=True, max_length=128)
+    metadata_: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column("metadata", JSON, nullable=True),
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -14,7 +14,6 @@ import logging
 import mimetypes
 import os
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -22,6 +21,7 @@ from sqlmodel import select
 
 from app.config import settings
 from app.models.raw_file import RawFile
+from app.services.raw_file_metadata import MetadataExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -161,64 +161,29 @@ class RawFileService:
             logger.info("Deleted raw file %s (%s)", file_id, file_path)
             return True
 
-    def generate_metadata(self, file_id: str) -> dict:
+    async def generate_metadata(self, file_id: str) -> dict:
         """
-        Use allAI copilot to auto-describe a file.
-
-        Extracts first 4KB of the file and sends to allAI for description.
-        Returns dict with title, description, tags, preview_snippet.
-
-        Falls back to a basic stub if allAI is unavailable.
+        Generate and persist structured metadata for a raw file.
         """
         raw_file = self.get_file(file_id)
         if raw_file is None:
             raise FileNotFoundError(f"Raw file not found: {file_id}")
 
-        # Extract sample for allAI
-        sample = ""
-        try:
-            with open(raw_file.file_path, "r", errors="replace") as f:
-                sample = f.read(4096)
-        except Exception:
-            sample = "(binary file — no text preview available)"
+        extractor = MetadataExtractor()
+        metadata = await extractor.extract(raw_file)
 
-        # Try allAI copilot
-        try:
-            from app.services.allai_service import get_allai_service
-            allai = get_allai_service()
-            if allai and hasattr(allai, "generate_completion"):
-                prompt = (
-                    "Describe this dataset for a marketplace listing. "
-                    "Generate: title (short), one-paragraph description, "
-                    "up to 5 tags as a list, and a preview snippet.\n\n"
-                    f"Filename: {raw_file.filename}\n"
-                    f"MIME type: {raw_file.mime_type}\n"
-                    f"Size: {raw_file.file_size_bytes} bytes\n\n"
-                    f"Sample:\n{sample[:2048]}"
-                )
-                result = allai.generate_completion(prompt)
-                if result:
-                    metadata = {
-                        "title": raw_file.filename,
-                        "description": str(result),
-                        "tags": [],
-                        "preview_snippet": sample[:500],
-                        "source": "allai",
-                    }
-                    logger.info("Generated allAI metadata for file %s", file_id)
-                    return metadata
-        except Exception as e:
-            logger.warning("allAI auto-describe unavailable, using stub: %s", e)
+        with _get_db_session() as session:
+            stored_raw_file = session.exec(
+                select(RawFile).where(RawFile.id == file_id)
+            ).first()
+            if stored_raw_file is None:
+                raise FileNotFoundError(f"Raw file not found: {file_id}")
 
-        # Stub fallback
-        metadata = {
-            "title": raw_file.filename,
-            "description": f"Raw data file: {raw_file.filename} ({raw_file.mime_type or 'unknown type'})",
-            "tags": [raw_file.mime_type.split("/")[-1]] if raw_file.mime_type else [],
-            "preview_snippet": sample[:500],
-            "source": "stub",
-        }
-        logger.info("Generated stub metadata for file %s", file_id)
+            stored_raw_file.metadata_ = metadata
+            session.add(stored_raw_file)
+            session.commit()
+
+        logger.info("Generated %s metadata for file %s", metadata.get("source", "unknown"), file_id)
         return metadata
 
 
