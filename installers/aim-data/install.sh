@@ -15,7 +15,7 @@ die()  { echo -e "\n  ${RED}✘${NC} $*\n"; exit 1; }
 
 REPO_RAW="https://raw.githubusercontent.com/aidotmarket/vectoraiz/main"
 COMPOSE_URL="${REPO_RAW}/docker-compose.aim-data.yml"
-IMAGE="ghcr.io/aidotmarket/aim-data:latest"
+IMAGE="ghcr.io/aidotmarket/vectoraiz:latest"
 INSTALL_DIR="${AIM_DATA_INSTALL_DIR:-$HOME/aim-data}"
 COMPOSE_FILE="docker-compose.aim-data.yml"
 
@@ -59,10 +59,11 @@ if [[ ! -f .env ]]; then
   cat > .env <<EOF
 # AIM-Data configuration
 POSTGRES_PASSWORD=$(generate_secret)
-AIM_DATA_SECRET_KEY=$(generate_secret)
-AIM_DATA_VERSION=latest
+VECTORAIZ_SECRET_KEY=$(generate_secret)
+VECTORAIZ_VERSION=latest
+VECTORAIZ_CHANNEL=aim-data
 AIM_DATA_PORT=8080
-AIM_DATA_MODE=standalone
+VECTORAIZ_MODE=standalone
 EOF
   pass "Generated .env"
 else

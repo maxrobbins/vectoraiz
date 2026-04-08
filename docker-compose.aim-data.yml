@@ -2,7 +2,7 @@
 # AIM-Data — Customer Deployment (docker-compose.aim-data.yml)
 # =============================================================================
 # Three containers:
-#   1. aim-data — nginx (UI) + uvicorn (API) in one image
+#   1. vectoraiz — nginx (UI) + uvicorn (API) in one image
 #   2. postgres  — Metadata, local auth, usage tracking
 #   3. qdrant    — Vector database for semantic search
 #
@@ -13,8 +13,8 @@
 # =============================================================================
 
 services:
-  aim-data:
-    image: ghcr.io/aidotmarket/aim-data:${AIM_DATA_VERSION:-latest}
+  vectoraiz:
+    image: ghcr.io/aidotmarket/vectoraiz:${VECTORAIZ_VERSION:-latest}
     ports:
       - "${AIM_DATA_PORT:-8080}:80"
     volumes:
@@ -25,9 +25,10 @@ services:
       # Remove this line if you don't want the container to have Docker access
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - AIM_DATA_VERSION=${AIM_DATA_VERSION:-latest}
-      - AIM_DATA_MODE=${AIM_DATA_MODE:-standalone}
-      - AIM_DATA_SECRET_KEY=${AIM_DATA_SECRET_KEY:-}
+      - VECTORAIZ_CHANNEL=aim-data
+      - VECTORAIZ_VERSION=${VECTORAIZ_VERSION:-latest}
+      - VECTORAIZ_MODE=${VECTORAIZ_MODE:-standalone}
+      - VECTORAIZ_SECRET_KEY=${VECTORAIZ_SECRET_KEY:-}
       - AIM_DATA_APIKEY_HMAC_SECRET=${AIM_DATA_APIKEY_HMAC_SECRET:-}
       - DATABASE_URL=postgresql://vectoraiz:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/vectoraiz
       - QDRANT_HOST=qdrant
@@ -36,7 +37,6 @@ services:
       - AIM_DATA_AUTH_ENABLED=true
       - AIM_DATA_CONNECTIVITY_ENABLED=true
       - AIM_DATA_ALLAI_ENABLED=${AIM_DATA_ALLAI_ENABLED:-true}
-      - AIM_DATA_MARKETPLACE_ENABLED=${AIM_DATA_MARKETPLACE_ENABLED:-true}
       # Allie / ai.market integration
       - AIM_DATA_AI_MARKET_URL=${AIM_DATA_AI_MARKET_URL:-}
       - AIM_DATA_ALLIE_PROVIDER=${AIM_DATA_ALLIE_PROVIDER:-}

@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $InstallDir = if ($env:AIM_DATA_INSTALL_DIR) { $env:AIM_DATA_INSTALL_DIR } else { Join-Path $HOME "aim-data" }
 $ComposeFile = "docker-compose.aim-data.yml"
 $ComposeUrl = "https://raw.githubusercontent.com/aidotmarket/vectoraiz/main/docker-compose.aim-data.yml"
-$Image = "ghcr.io/aidotmarket/aim-data:latest"
+$Image = "ghcr.io/aidotmarket/vectoraiz:latest"
 
 function Write-Banner {
     Write-Host ""
@@ -73,10 +73,11 @@ if (-not (Test-Path $envFile)) {
     $envContent = @"
 # AIM-Data configuration
 POSTGRES_PASSWORD=$(New-RandomSecret)
-AIM_DATA_SECRET_KEY=$(New-RandomSecret)
-AIM_DATA_VERSION=latest
+VECTORAIZ_SECRET_KEY=$(New-RandomSecret)
+VECTORAIZ_VERSION=latest
+VECTORAIZ_CHANNEL=aim-data
 AIM_DATA_PORT=8080
-AIM_DATA_MODE=standalone
+VECTORAIZ_MODE=standalone
 "@
     Set-Content -Path $envFile -Value $envContent -Encoding UTF8
     Write-Success "Generated .env"
