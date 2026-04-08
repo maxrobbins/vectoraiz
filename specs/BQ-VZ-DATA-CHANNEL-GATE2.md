@@ -1,8 +1,9 @@
 # BQ-VZ-DATA-CHANNEL — Gate 2: Detailed Build Plan
 
-**Author:** Vulcan (S415)
+**Author:** Vulcan (S415, R2 S416)
 **Gate 1:** APPROVED_WITH_MANDATES (MP R2 + AG R1)
 **Remaining Mandates:** MP-R2-M1 (DatasetDetail.tsx fan-out), AG-M1/M2 (docker-compose reconciliation)
+**R2 Fixes:** Corrected endpoints (/api/raw/*), added frontend API client, fixed dependency graph, reworked metadata architecture, updated estimates
 
 ---
 
@@ -117,7 +118,7 @@ export function getStepsForChannel(channel: Channel): StepDef[] {
 
 ### A8. Frontend — `frontend/src/contexts/CoPilotContext.tsx`
 
-Update greeting selection (line 313) to handle `aim-data`. Ideally deduplicate by fetching from backend `/api/config/channel` endpoint (which already returns channel info). If dedup is complex, add inline `aim-data` case:
+Update greeting selection (line 313) to handle `aim-data`. Ideally deduplicate by fetching from backend `/api/system/info` endpoint (which already returns channel info). If dedup is complex, add inline `aim-data` case:
 ```typescript
 content: channel === "marketplace" ? "..." 
   : channel === "aim-data" ? "Hi! I'm your data management copilot..."
@@ -166,7 +167,7 @@ Build on the existing raw file registration flow. No new models.
 Add a prominent drag-and-drop zone to the Dashboard page when channel is `aim-data`:
 - Full-width card with dashed border, file icon, "Drop files here or click to browse"
 - Accepts ANY file format (no extension filtering)
-- On drop: calls `POST /raw-files/register` after saving to import directory
+- On drop: calls `POST /api/raw/files` after saving to import directory
 - Shows progress with allAI metadata extraction status (Slice C integration point)
 
 ### B2. Post-Upload Flow
@@ -181,8 +182,9 @@ After successful file registration:
 
 Enhance `/datasets` page for `aim-data` channel:
 - Add "Raw Files" tab alongside "Datasets" tab
-- Raw Files tab shows files from `GET /raw-files/` endpoint
-- Each file card shows: filename, size, MIME type, listing status (draft/listed/none)
+- Raw Files tab calls `listRawFiles()` from api.ts
+- Each file card shows: filename, size, MIME type
+- Listing status requires a joined query: add `GET /api/raw/files?include_listing_status=true` parameter that joins `raw_files` with `raw_listings` to return `listing_status` (draft/listed/none) per file. Alternatively, frontend fetches `listRawListings()` separately and joins client-side by `raw_file_id`.
 - Click → detail view with metadata editor and publish CTA
 
 ### B4. Tests
@@ -194,7 +196,7 @@ Enhance `/datasets` page for `aim-data` channel:
 
 ---
 
-## Slice C: allAI Metadata Extraction (8-10h)
+## Slice C: allAI Metadata Extraction (12-14h)
 
 Extend `RawFileService` with async metadata extraction.
 
@@ -226,19 +228,17 @@ class MetadataExtractor:
 **Audio:** mutagen for duration, format, sample rate. allAI for transcription summary (if <5min).
 **Generic:** File size, MIME type. allAI for description from filename + any extractable text.
 
-### C3. Integration with Raw File Registration
+### C3. Integration with Existing Metadata Endpoint
 
-After `register_file()`, dispatch async metadata extraction:
-```python
-# In raw_file_service.py register_file():
-# After DB insert, enqueue metadata extraction
-from app.services.raw_file_metadata import MetadataExtractor
-extractor = MetadataExtractor()
-metadata = await extractor.extract(raw_file)
-# Update raw_file.metadata JSON field
-```
+The backend already has `POST /api/raw/files/{file_id}/metadata` which calls `RawFileService.generate_metadata()`. Current implementation is on-demand (user-triggered). Changes:
 
-Add `metadata: Optional[dict]` JSON field to `RawFile` model. Alembic migration required.
+1. **Keep on-demand as primary path** — frontend calls `POST /api/raw/files/{file_id}/metadata` after upload completes
+2. **Add optional auto-trigger** — after `register_file()` (which is sync), enqueue a background task via APScheduler to call `generate_metadata()` if channel is `aim-data` (presentation hint passed via header)
+3. **Add `metadata` JSON column** to `RawFile` model — Alembic migration required
+4. **Update `RawFileResponse` schema** — add `metadata: Optional[dict]` field
+5. **Update `MetadataResponse`** — ensure it returns the full extracted metadata structure
+
+Note: `register_file()` stays synchronous. Metadata extraction is a separate step, either on-demand or background-triggered.
 
 ### C4. allAI Prompt Templates
 
@@ -258,11 +258,11 @@ Use existing allAI infrastructure (Gemini via `google-genai` SDK). Prompts:
 
 ---
 
-## Slice D: Dataset Detail Enhancements (6-8h)
+## Slice D: Dataset Detail Enhancements (8-10h)
 
 ### D1. Raw File Detail View
 
-Create `/raw-files/:id` detail page (or extend DatasetDetail):
+Create `/raw-files/:id` (frontend) → `GET /api/raw/files/{id}` (backend) detail page (or extend DatasetDetail):
 - File preview: image thumbnail, PDF first page (pdf.js), audio player, generic file icon
 - Metadata editor: form populated with allAI-extracted metadata, all fields editable
 - Listing status: badge showing draft/listed/none
@@ -332,7 +332,7 @@ No `ghcr.io/aidotmarket/aim-data` build workflow needed. AIM Data deploys the st
 ### E4. Smoke Tests
 
 - `docker-compose.aim-data.yml` starts successfully
-- Health endpoint returns `aim-data` channel
+- `GET /api/system/info` returns `channel: "aim-data"`
 - Sidebar order matches NAV_ORDER_AIM_DATA
 - allAI greeting matches aim-data prompt
 
@@ -347,13 +347,11 @@ No `ghcr.io/aidotmarket/aim-data` build workflow needed. AIM Data deploys the st
 ## Build Order & Dependencies
 
 ```
-Slice A (channel config) ──┬── Slice B (upload UX)
-                           ├── Slice C (allAI metadata)
-                           ├── Slice D (detail enhancements)
+Slice A (channel config) ──┬── Slice B (upload UX) ── Slice C (allAI metadata) ── Slice D (detail enhancements)
                            └── Slice E (deployment)
 ```
 
-Slice A is the only dependency. B/C/D/E can be built in parallel after A lands.
+Slice A is the foundation. B requires A (channel context + frontend API client). C requires B (upload flow feeds metadata extraction). D requires C (detail view shows extracted metadata). E is parallel after A (deployment config only).
 
 ## Mandate Coverage
 
@@ -369,7 +367,7 @@ Slice A is the only dependency. B/C/D/E can be built in parallel after A lands.
 |-------|----------|---------|
 | A | 10-14h | MP (split: backend 4h + frontend 6-10h) |
 | B | 8-10h | MP or CC |
-| C | 8-10h | MP or CC |
-| D | 6-8h | MP or CC |
+| C | 12-14h | MP or CC |
+| D | 8-10h | MP or CC |
 | E | 6-8h | MP |
-| **Total** | **38-50h** | |
+| **Total** | **44-56h** | |
