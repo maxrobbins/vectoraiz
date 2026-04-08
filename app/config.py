@@ -138,6 +138,8 @@ class Settings(BaseSettings):
     upload_directory: str = "/data/uploads"
     processed_directory: str = "/data/processed"
     chunk_size: int = 1024 * 1024  # 1MB chunks for streaming
+    raw_file_import_directory: str = "/data/import"
+    raw_file_upload_max_size_mb: int = 500
     
     # Qdrant settings
     qdrant_host: str = "qdrant"

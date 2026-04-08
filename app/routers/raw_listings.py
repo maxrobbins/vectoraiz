@@ -11,11 +11,15 @@ Updated: 2026-03-05 — Refactored to use RawListingService, added list/delete f
 """
 
 import logging
+import os
+import uuid
+from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
+from app.config import settings
 from app.schemas.raw_listings import (
     MetadataResponse,
     RawFileRegisterRequest,
@@ -85,6 +89,54 @@ async def register_raw_file(
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return _file_response(raw_file)
+
+
+@router.post(
+    "/files/upload",
+    response_model=RawFileResponse,
+    status_code=201,
+    summary="Upload and register a raw file",
+    description="Accept a browser multipart upload, save it into the raw import directory, and register it.",
+)
+async def upload_raw_file(
+    file: UploadFile = File(...),
+    svc: RawFileService = Depends(get_raw_file_service),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Uploaded file must include a filename")
+
+    import_dir = svc.get_import_directory()
+    import_dir.mkdir(parents=True, exist_ok=True)
+
+    original_name = os.path.basename(file.filename)
+    suffix = Path(original_name).suffix
+    stored_path = import_dir / f"{uuid.uuid4().hex}{suffix}"
+    bytes_written = 0
+    max_size_bytes = settings.raw_file_upload_max_size_mb * 1024 * 1024
+
+    try:
+        with stored_path.open("wb") as output:
+            while chunk := await file.read(settings.chunk_size):
+                bytes_written += len(chunk)
+                if bytes_written > max_size_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                        detail=f"File exceeds max upload size of {settings.raw_file_upload_max_size_mb}MB",
+                    )
+                output.write(chunk)
+
+        raw_file = svc.register_file(str(stored_path), filename=original_name)
+        return _file_response(raw_file)
+    except HTTPException:
+        if stored_path.exists():
+            stored_path.unlink()
+        raise
+    except Exception:
+        if stored_path.exists():
+            stored_path.unlink()
+        raise
+    finally:
+        await file.close()
 
 
 @router.get(

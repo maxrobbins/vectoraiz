@@ -217,6 +217,19 @@ export interface UploadResponse {
   status: string;
 }
 
+export interface RawFile {
+  id: string;
+  filename: string;
+  file_path: string;
+  file_size_bytes: number;
+  content_hash: string;
+  mime_type: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type RawFileResponse = RawFile;
+
 export interface DatasetStatusResponse {
   dataset_id: string;
   status: string;
@@ -686,6 +699,38 @@ export const notificationsApi = {
     apiFetch<{ message: string }>(`/api/notifications/${id}`, { method: 'DELETE' }),
 };
 
+export const rawFilesApi = {
+  uploadRawFile: async (file: File): Promise<RawFileResponse> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const headers: Record<string, string> = {};
+    const apiKey = getStoredApiKey();
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+    }
+
+    const response = await fetch(`${getApiUrl()}/api/raw/files/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (response.status === 401) {
+      localStorage.removeItem('vectoraiz_api_key');
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Raw file upload failed' }));
+      throw new Error(error.detail);
+    }
+
+    return response.json();
+  },
+
+  listRawFiles: () => apiFetch<RawFile[]>('/api/raw/files'),
+};
+
 // Diagnostics API (Phase 4)
 export interface DiagnosticTransmitResponse {
   success: boolean;
@@ -902,5 +947,4 @@ export const importApi = {
       method: 'POST',
     }),
 };
-
 

@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from sqlmodel import select
 
+from app.config import settings
 from app.models.raw_file import RawFile
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,11 @@ def _compute_sha256(file_path: str) -> str:
 class RawFileService:
     """Manages raw file registration, lookup, and serving."""
 
-    def register_file(self, file_path: str) -> RawFile:
+    def get_import_directory(self) -> Path:
+        """Return the directory where browser-uploaded raw files are persisted."""
+        return Path(settings.raw_file_import_directory)
+
+    def register_file(self, file_path: str, filename: Optional[str] = None) -> RawFile:
         """
         Register a raw file: compute SHA256, detect MIME type, store metadata in DB.
 
@@ -65,11 +70,11 @@ class RawFileService:
         content_hash = _compute_sha256(file_path)
         file_size = path.stat().st_size
         mime_type, _ = mimetypes.guess_type(file_path)
-        filename = path.name
+        stored_filename = filename or path.name
 
         raw_file = RawFile(
             id=str(uuid.uuid4()),
-            filename=filename,
+            filename=stored_filename,
             file_path=str(path.resolve()),
             file_size_bytes=file_size,
             content_hash=content_hash,
@@ -82,7 +87,7 @@ class RawFileService:
             session.refresh(raw_file)
             logger.info(
                 "Registered raw file: %s (hash=%s, size=%d)",
-                filename, content_hash[:12], file_size,
+                stored_filename, content_hash[:12], file_size,
             )
             return raw_file
 

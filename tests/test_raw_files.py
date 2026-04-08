@@ -9,12 +9,13 @@ Created: 2026-03-03
 """
 
 import os
-import tempfile
+from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
+from app.middleware.auth import require_admin
 from app.routers.raw_listings import router as raw_listings_router
 
 
@@ -28,6 +29,29 @@ def app():
 @pytest.fixture
 def client(app):
     return TestClient(app)
+
+
+@pytest.fixture
+def protected_app(monkeypatch):
+    async def _fake_get_current_user(request):
+        request.state.user_role = "admin"
+        return {"user_id": "test", "key_id": "test", "scopes": ["admin"], "valid": True}
+
+    monkeypatch.setattr("app.auth.api_key_auth._is_auth_enabled", lambda: True)
+    monkeypatch.setattr("app.auth.api_key_auth.get_current_user", _fake_get_current_user)
+
+    _app = FastAPI()
+    _app.include_router(
+        raw_listings_router,
+        prefix="/api/raw",
+        dependencies=[Depends(require_admin)],
+    )
+    return _app
+
+
+@pytest.fixture
+def protected_client(protected_app):
+    return TestClient(protected_app)
 
 
 @pytest.fixture
@@ -94,6 +118,72 @@ class TestRawFileRegistration:
         r1 = client.post("/api/raw/files", json={"file_path": sample_csv})
         r2 = client.post("/api/raw/files", json={"file_path": sample_csv})
         assert r1.json()["content_hash"] == r2.json()["content_hash"]
+
+    def test_upload_raw_file(self, client, tmp_path, monkeypatch):
+        """Multipart upload persists into the import directory and registers the file."""
+        import_dir = tmp_path / "raw-import"
+        monkeypatch.setattr("app.config.settings.raw_file_import_directory", str(import_dir))
+        monkeypatch.setattr("app.services.raw_file_service.settings.raw_file_import_directory", str(import_dir))
+
+        resp = client.post(
+            "/api/raw/files/upload",
+            files={"file": ("browser.csv", b"id,name\n1,Alice\n", "text/csv")},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["filename"] == "browser.csv"
+        assert data["mime_type"] == "text/csv"
+        assert Path(data["file_path"]).parent == import_dir
+        assert Path(data["file_path"]).read_text() == "id,name\n1,Alice\n"
+
+    def test_upload_raw_file_appears_in_list(self, client, tmp_path, monkeypatch):
+        """Uploaded files are visible through GET /api/raw/files."""
+        import_dir = tmp_path / "raw-import"
+        monkeypatch.setattr("app.config.settings.raw_file_import_directory", str(import_dir))
+        monkeypatch.setattr("app.services.raw_file_service.settings.raw_file_import_directory", str(import_dir))
+
+        upload = client.post(
+            "/api/raw/files/upload",
+            files={"file": ("listed.json", b'{\"ok\": true}', "application/json")},
+        )
+
+        assert upload.status_code == 201
+        file_id = upload.json()["id"]
+
+        listed = client.get("/api/raw/files")
+        assert listed.status_code == 200
+        assert any(item["id"] == file_id for item in listed.json())
+
+    def test_upload_size_limit_exceeded(self, client, tmp_path, monkeypatch):
+        """Multipart upload rejects files larger than the configured limit."""
+        import_dir = tmp_path / "raw-import"
+        monkeypatch.setattr("app.config.settings.raw_file_import_directory", str(import_dir))
+        monkeypatch.setattr("app.services.raw_file_service.settings.raw_file_import_directory", str(import_dir))
+        monkeypatch.setattr("app.config.settings.raw_file_upload_max_size_mb", 1)
+        monkeypatch.setattr("app.routers.raw_listings.settings.raw_file_upload_max_size_mb", 1)
+
+        resp = client.post(
+            "/api/raw/files/upload",
+            files={"file": ("too-big.bin", os.urandom(1024 * 1024 + 1), "application/octet-stream")},
+        )
+
+        assert resp.status_code == 413
+        assert "max upload size" in resp.json()["detail"].lower()
+        assert not import_dir.exists() or not any(import_dir.iterdir())
+
+    def test_upload_requires_authentication(self, protected_client, tmp_path, monkeypatch):
+        """Multipart upload is rejected when the raw router is mounted with auth and no auth is provided."""
+        import_dir = tmp_path / "raw-import"
+        monkeypatch.setattr("app.config.settings.raw_file_import_directory", str(import_dir))
+        monkeypatch.setattr("app.services.raw_file_service.settings.raw_file_import_directory", str(import_dir))
+
+        resp = protected_client.post(
+            "/api/raw/files/upload",
+            files={"file": ("browser.csv", b"id,name\n1,Alice\n", "text/csv")},
+        )
+
+        assert resp.status_code == 401
 
 
 class TestRawFileGet:
