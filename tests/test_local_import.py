@@ -1,7 +1,6 @@
 """Tests for VZ-PERF-P1 local_import router path validation and endpoints."""
 import os
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -34,7 +33,7 @@ def test_browse_returns_files(patch_import_root, validate):
     (patch_import_root / "data.csv").write_text("a,b\n1,2")
     (patch_import_root / "report.json").write_text("{}")
 
-    from app.routers.local_import import _validate_import_path, _get_supported_extensions
+    from app.routers.local_import import _validate_import_path
 
     # Validate the root itself
     resolved = _validate_import_path("")
@@ -127,7 +126,6 @@ def test_process_validates_paths(patch_import_root, validate):
 
 def test_status_returns_availability(patch_import_root):
     """Status endpoint returns correct availability info."""
-    from app.routers.local_import import IMPORT_ROOT
 
     # With patched root, the directory exists
     assert patch_import_root.is_dir()

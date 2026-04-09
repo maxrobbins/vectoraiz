@@ -11,7 +11,6 @@ BQ-VZ-MULTI-USER: Tests for Multi-User Authentication System
 
 import asyncio
 import os
-from unittest.mock import patch
 
 import jwt
 import pytest
@@ -292,7 +291,7 @@ class TestJWTTokens:
 
     def test_jwt_secret_persisted(self):
         """JWT secret is generated and persisted to file."""
-        from app.middleware.auth import get_jwt_secret, _JWT_SECRET_PATH
+        from app.middleware.auth import get_jwt_secret
         import app.middleware.auth as auth_mod
         auth_mod._jwt_secret = None  # Force regeneration
 
@@ -403,7 +402,7 @@ class TestAuthEndpoints:
             "username": "admin",
             "password": "adminpass123",
         })
-        login_resp = client.post("/api/auth/login", json={
+        client.post("/api/auth/login", json={
             "username": "admin",
             "password": "adminpass123",
         })
@@ -607,7 +606,7 @@ class TestRoleEnforcement:
 
     def test_role_required_blocks_user_role(self):
         """role_required('admin') rejects a JWT with role='user'."""
-        from app.middleware.auth import role_required, create_jwt_token, get_jwt_secret
+        from app.middleware.auth import create_jwt_token
         from app.services.auth_service import AuthService
 
         auth_svc = AuthService()
@@ -675,7 +674,7 @@ class TestCLIReset:
     def test_reset_password_cli(self, auth_service):
         """CLI reset changes the password."""
         # Create user
-        user = asyncio.get_event_loop().run_until_complete(
+        asyncio.get_event_loop().run_until_complete(
             auth_service.create_user("cliadmin", "oldpass12", role="admin")
         )
 

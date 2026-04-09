@@ -16,10 +16,7 @@ Phase 2 (M4) improvements:
 
 from __future__ import annotations
 
-import io
-import json
 import logging
-import os
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path

@@ -12,10 +12,10 @@ import time
 
 import pytest
 import yaml
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 
 from app.core.errors import VectorAIzError, CODE_PATTERN
-from app.core.errors.registry import ErrorRegistry, ErrorEntry, RegistryValidationError, VALID_DOMAINS
+from app.core.errors.registry import ErrorRegistry, RegistryValidationError, VALID_DOMAINS
 from app.core.issue_tracker import IssueTracker
 from app.core.structured_logging import (
     request_id_var,

@@ -4,7 +4,6 @@ Tests for SerialMeteringStrategy — meter allow/deny, offline behavior, categor
 BQ-VZ-SERIAL-CLIENT
 """
 
-import os
 import pytest
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -26,7 +25,6 @@ from app.services.serial_store import (
     MIGRATED,
     PROVISIONED,
     UNPROVISIONED,
-    SerialState,
     SerialStore,
 )
 from app.services.serial_client import MeterResult

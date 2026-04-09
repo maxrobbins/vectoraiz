@@ -10,7 +10,6 @@ Covers:
 - AAD mismatch fails decryption
 """
 
-import os
 import time
 
 import pytest
@@ -64,7 +63,6 @@ class TestAuthDisableGuard:
         monkeypatch.setenv("ENVIRONMENT", "development")
 
         from app.auth.api_key_auth import get_current_user
-        from unittest.mock import AsyncMock
 
         with patch("app.auth.api_key_auth.settings") as mock_settings:
             mock_settings.debug = True
@@ -239,7 +237,6 @@ class TestHostnameAnonymized:
         """metadata.json contains host_id (hash) not hostname."""
         import json
         import zipfile
-        import io
         from app.services.diagnostic_service import DiagnosticService
         from app.services.diagnostic_collectors import BaseCollector
 

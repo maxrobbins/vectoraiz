@@ -1,11 +1,10 @@
 import pytest
-from pathlib import Path
 import csv
 
 from fastapi.testclient import TestClient
 from app.main import app
-from app.services.sql_service import SQLService, SQLValidationError
-from app.services.processing_service import get_processing_service, ProcessingStatus
+from app.services.sql_service import SQLService
+from app.services.processing_service import ProcessingStatus
 from app.services.duckdb_service import get_duckdb_service
 
 client = TestClient(app)
@@ -140,7 +139,7 @@ def test_query_get_endpoint():
 
 def test_sql_integration(tmp_path):
     """Test full SQL execution against a created dataset."""
-    from app.services.processing_service import ProcessingStatus, DatasetRecord
+    from app.services.processing_service import ProcessingStatus
     
     # 1. Setup mock ProcessingService to return a record
     # Actually, we can just use the real one if we mock the filesystem or creaate a file

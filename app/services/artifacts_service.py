@@ -29,11 +29,11 @@ import tempfile
 import time
 import uuid
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from app.config import settings
 
@@ -309,7 +309,7 @@ class ArtifactsService:
         if not user_id:
             raise ValueError("user_id is required (NEVER null)")
 
-        from app.services.sql_service import get_sql_service, SQLValidationError
+        from app.services.sql_service import get_sql_service
 
         filename = self._validate_filename(filename)
         self._check_rate_limit(user_id)

@@ -11,7 +11,7 @@ Created: 2026-01-25
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any
 import logging
 
 from app.config import settings

@@ -19,7 +19,7 @@ import logging
 import time
 from collections import defaultdict
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 

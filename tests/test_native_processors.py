@@ -5,7 +5,6 @@ Each test creates a minimal synthetic file and verifies the processor returns
 the standard document result dict with correct structure.
 """
 
-import tempfile
 import textwrap
 from pathlib import Path
 from zipfile import ZipFile

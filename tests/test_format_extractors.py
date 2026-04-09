@@ -3,10 +3,7 @@ Tests for format_extractors.py — the bridge between NativeFormatProcessor
 and the streaming TextBlock format.
 """
 
-import tempfile
-from pathlib import Path
 
-import pytest
 
 from app.services.format_extractors import can_extract, extract_text_blocks, EXTRACTABLE_TYPES
 from app.services.streaming_processor import TextBlock

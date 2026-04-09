@@ -17,7 +17,6 @@ from starlette.responses import Response
 from app.core.structured_logging import (
     request_id_var,
     correlation_id_var,
-    session_id_var,
 )
 
 logger = logging.getLogger(__name__)

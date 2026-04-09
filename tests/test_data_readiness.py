@@ -6,8 +6,6 @@ Tests for BQ-VZ-DATA-READINESS Phase 1A:
 - Readiness endpoint
 """
 import json
-import os
-import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -297,8 +295,8 @@ class TestPipelineSteps:
             with patch("app.services.pipeline_service.get_compliance_service"):
                 with patch("app.services.pipeline_service.get_attestation_service"):
                     with patch("app.services.pipeline_service.get_listing_metadata_service"):
-                        with patch("app.services.pipeline_service.get_sketch_service") as mock_sketch:
-                            with patch("app.services.pipeline_service.get_quality_contract_service") as mock_quality:
+                        with patch("app.services.pipeline_service.get_sketch_service"):
+                            with patch("app.services.pipeline_service.get_quality_contract_service"):
                                 svc = PipelineService()
                                 assert svc.sketch_service is not None
                                 assert svc.quality_contract_service is not None

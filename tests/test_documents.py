@@ -1,8 +1,7 @@
 import pytest
 from pathlib import Path
-import tempfile
 
-from app.services.document_service import LocalDocumentProcessor, DocumentService
+from app.services.document_service import DocumentService
 
 
 @pytest.fixture

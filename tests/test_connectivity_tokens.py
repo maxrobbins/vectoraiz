@@ -6,10 +6,7 @@ parsing edge cases (unicode, whitespace, short IDs, extra underscores),
 max token enforcement, revocation, expiration.
 """
 
-import hmac
-import time
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
 
 import pytest
 

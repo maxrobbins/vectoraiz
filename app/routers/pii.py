@@ -6,7 +6,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
-from typing import Optional, Dict
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,6 @@ from app.services.pii_service import (
     get_pii_service,
     PIIService,
     DEFAULT_SAMPLE_SIZE,
-    VALID_PII_ACTIONS,
 )
 from app.auth.api_key_auth import get_current_user, AuthenticatedUser
 from app.services.processing_service import get_processing_service, ProcessingService, ProcessingStatus
@@ -122,19 +121,19 @@ async def scan_dataset(
             "filename": record.original_filename,
             **result,
         }
-    except (OSError, ConnectionError) as e:
+    except (OSError, ConnectionError):
         logger.exception("PII scan failed for dataset %s", dataset_id)
         raise HTTPException(
             status_code=503,
             detail="PII scanning service unavailable. Ensure required NLP models are installed (python -m spacy download en_core_web_sm).",
         )
-    except ImportError as e:
+    except ImportError:
         logger.exception("PII scanning dependency missing")
         raise HTTPException(
             status_code=503,
             detail="PII scanning dependency not available. Check that all required packages are installed.",
         )
-    except Exception as e:
+    except Exception:
         logger.exception("PII scan failed for dataset %s", dataset_id)
         raise HTTPException(status_code=500, detail="PII scan failed due to an internal error")
 

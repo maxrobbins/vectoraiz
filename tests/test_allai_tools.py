@@ -11,16 +11,13 @@ PHASE: BQ-ALLAI-B Tests
 CREATED: 2026-02-16
 """
 
-import asyncio
 import time
-from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.services.sql_sandbox import SQLSandbox
 from app.services.approval_token_service import (
-    RISK_TTL,
     ApprovalTokenService,
 )
 from app.services.allai_tool_result import ToolResult

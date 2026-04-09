@@ -11,13 +11,9 @@ Tests:
 """
 
 import json
-import os
-import tempfile
 import time
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -114,8 +110,6 @@ class TestFTSService:
             build_fts_index,
             search_fts,
             get_fts_status,
-            _fts_status,
-            _fts_lock,
         )
 
         # Create a test parquet file

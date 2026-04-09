@@ -9,7 +9,7 @@ import json
 import logging
 import threading
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 
 from app.config import settings
 

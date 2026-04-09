@@ -9,7 +9,6 @@ Created: 2026-02-19
 """
 
 import logging
-from typing import List
 
 from fastapi import APIRouter, Depends
 from sqlmodel import select

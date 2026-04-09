@@ -1,11 +1,10 @@
 import httpx
 import time
-from functools import lru_cache
-from typing import Dict, Any, Optional, List
+from typing import Dict, Optional, List
 
-from fastapi import Depends, HTTPException, Request, Security
+from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from starlette import status
 
 from app.config import settings

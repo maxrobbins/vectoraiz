@@ -14,7 +14,6 @@ and returns the SAME dict format as TikaDocumentProcessor / LocalDocumentProcess
 import email
 import logging
 import mailbox
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 

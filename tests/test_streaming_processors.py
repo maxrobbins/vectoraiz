@@ -21,10 +21,9 @@ import csv
 import json
 import os
 import signal
-import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -709,7 +708,6 @@ class TestCancelEscalation:
 
         # Worker stays alive during grace, then dies after SIGTERM
         kill_called = {"sigterm": False}
-        original_kill = os.kill
 
         def fake_is_alive():
             return not kill_called["sigterm"]

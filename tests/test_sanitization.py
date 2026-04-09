@@ -1,6 +1,5 @@
 """Tests for filename and path sanitization utilities (BQ-115)."""
 
-import pytest
 
 from app.utils.sanitization import sanitize_filename, sql_quote_literal
 

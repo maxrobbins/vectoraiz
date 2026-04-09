@@ -26,7 +26,7 @@ import os
 import logging
 import tempfile
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import AsyncIterator, Optional
 
 import httpx

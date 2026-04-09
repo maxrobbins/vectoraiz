@@ -7,13 +7,12 @@ Covers:
 3. Tool executor handles generate_diagnostic_bundle (mocked DiagnosticService)
 """
 
-import asyncio
 import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.prompt_factory import PromptFactory, AllieContext
+from app.services.prompt_factory import PromptFactory
 from app.services.allai_tools import ALLAI_TOOLS
 from app.services.allai_tool_executor import AllAIToolExecutor
 

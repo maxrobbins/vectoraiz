@@ -29,7 +29,6 @@ from typing import Optional, List, Dict, Any
 import time
 import sys
 
-from app.config import settings
 
 
 # Model configuration

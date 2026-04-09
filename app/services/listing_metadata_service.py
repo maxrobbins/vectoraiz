@@ -11,7 +11,7 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, List, Optional
 
 from app.services.duckdb_service import ephemeral_duckdb_service
 

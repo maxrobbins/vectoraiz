@@ -172,7 +172,6 @@ class ComplianceService:
         for reg in sorted(regulations):
             # Find all PII entities that trigger this regulation
             triggering_entities = []
-            flagged_cols: Set[str] = set()
             max_risk = "low"
 
             for entity in pii_entities:

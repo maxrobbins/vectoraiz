@@ -7,7 +7,7 @@ to only include display_columns configured per-dataset.
 
 import json
 import logging
-from typing import Dict, Any, List, Optional
+from typing import List, Optional
 
 from app.models.portal import get_portal_config
 from app.schemas.portal import (

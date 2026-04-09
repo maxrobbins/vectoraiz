@@ -13,8 +13,6 @@ Create Date: 2026-02-14
 """
 from typing import Sequence, Union
 
-from alembic import op
-import sqlalchemy as sa
 
 revision: str = "007_bq128_p4_idempotency"
 down_revision: Union[str, None] = "006_bq128_nudge_dismissals"

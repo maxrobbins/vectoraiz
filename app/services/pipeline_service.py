@@ -535,7 +535,7 @@ class PipelineService:
         if pii_scan_result:
             try:
                 self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 5/{total_steps}: Generating compliance report...")
-                compliance_report = await self.compliance_service.generate_compliance_report(dataset_id)
+                await self.compliance_service.generate_compliance_report(dataset_id)
                 self._set_step_status(dataset_id, "compliance_report", STEP_SUCCESS)
             except Exception as e:
                 logger.error("Compliance report failed for %s: %s", dataset_id, e, exc_info=True)
@@ -548,7 +548,7 @@ class PipelineService:
         self._set_step_status(dataset_id, "attestation", STEP_RUNNING)
         try:
             self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 6/{total_steps}: Generating quality attestation...")
-            attestation = await self.attestation_service.generate_attestation(dataset_id)
+            await self.attestation_service.generate_attestation(dataset_id)
             self._set_step_status(dataset_id, "attestation", STEP_SUCCESS)
         except Exception as e:
             logger.error("Attestation failed for %s: %s", dataset_id, e, exc_info=True)
@@ -558,7 +558,7 @@ class PipelineService:
         self._set_step_status(dataset_id, "listing_metadata", STEP_RUNNING)
         try:
             self._update_status(dataset_id, PIPELINE_RUNNING, f"Step 7/{total_steps}: Generating listing metadata...")
-            listing_metadata = await self.listing_metadata_service.generate_listing_metadata(dataset_id)
+            await self.listing_metadata_service.generate_listing_metadata(dataset_id)
             self._set_step_status(dataset_id, "listing_metadata", STEP_SUCCESS)
         except Exception as e:
             logger.error("Listing metadata generation failed for %s: %s", dataset_id, e, exc_info=True)

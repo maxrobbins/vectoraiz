@@ -55,7 +55,7 @@ from app.models.state import (
 from app.services.metering_service import metering_service
 from app.services.copilot_service import copilot_service
 from app.services.serial_metering import (
-    metered, MeterDecision, MeteringStrategy, CreditExhaustedException, ActivationRequiredException, UnprovisionedException,
+    MeteringStrategy, CreditExhaustedException, ActivationRequiredException, UnprovisionedException,
     SerialMeteringStrategy, LedgerMeteringStrategy,
     _make_request_id, DEFAULT_DATA_COST, DEFAULT_SETUP_COST,
     classify_copilot_category,
@@ -64,7 +64,6 @@ from app.services.serial_store import get_serial_store, MIGRATED
 from app.services.allie_provider import AllieDisabledError, AllieTimeoutError
 from app.services.nudge_manager import nudge_manager, NudgeMessage
 from app.services.approval_token_service import approval_token_service
-from app.services.audit_logger import audit_logger
 from app.services.event_bus import VZEvent, event_bus
 from app.services.chat_attachment_service import (
     ALLOWED_MIME_TYPES,
@@ -522,7 +521,7 @@ def _balance_gate_message(balance_cents: int, reason: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def _get_or_create_chat_session(
-    user_id: str, db: DBSession, session_id_hint: Optional[str] = None,
+    user_id: str, db: DBSession,
 ) -> ChatSession:
     """Get the user's current (non-archived) chat session, or create one."""
     stmt = (
@@ -859,7 +858,6 @@ async def websocket_copilot(websocket: WebSocket):
                         send_heartbeat=send_heartbeat,
                         state_snapshot=state_snapshot,
                         user_preferences=user_prefs,
-                        is_first_message=is_first,
                         attachments=attachments,
                         chat_history=chat_history,
                     )
@@ -878,7 +876,6 @@ async def websocket_copilot(websocket: WebSocket):
                         send_chunk=send_chunk,
                         state_snapshot=state_snapshot,
                         user_preferences=user_prefs,
-                        is_first_message=is_first,
                         attachments=attachments,
                         chat_history=chat_history,
                     )
@@ -892,7 +889,6 @@ async def websocket_copilot(websocket: WebSocket):
                     send_chunk=send_chunk,
                     state_snapshot=state_snapshot,
                     user_preferences=user_prefs,
-                    is_first_message=is_first,
                     attachments=attachments,
                     chat_history=chat_history,
                 )

@@ -1,8 +1,6 @@
 """Tests for BQ-VZ-LOCAL-IMPORT: local directory import service & endpoints."""
 import os
-import asyncio
 import pytest
-from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from app.services.import_service import (
@@ -10,8 +8,6 @@ from app.services.import_service import (
     ImportFileEntry,
     ImportJob,
     validate_import_path,
-    IMPORT_ROOT,
-    JUNK_FILES,
 )
 
 
@@ -197,7 +193,6 @@ class TestScan:
 
         def capped_scan(path_str, recursive=True, max_depth=5):
             # Temporarily override the file limit in the scan's inner function
-            import app.services.import_service as mod
             result = original_scan(path_str, recursive=recursive, max_depth=max_depth)
             return result
 

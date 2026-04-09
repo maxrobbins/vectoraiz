@@ -7,11 +7,8 @@ Covers: create, list, get, download, delete, star, cleanup,
 
 import json
 import os
-import shutil
-import tempfile
 import time
 from datetime import datetime, timezone, timedelta
-from unittest.mock import patch
 
 import pytest
 
@@ -311,7 +308,7 @@ class TestCleanup:
         assert svc._get_artifact_dir(a.id).exists()
 
     def test_cleanup_keeps_recent(self, svc):
-        a = svc.create_artifact("recent.txt", "hello", "txt", "desc", [], "local")
+        svc.create_artifact("recent.txt", "hello", "txt", "desc", [], "local")
         removed = svc.cleanup_expired()
         assert removed == 0
 

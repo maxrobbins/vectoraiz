@@ -4,7 +4,7 @@ Pydantic Schemas for Compliance Reports
 BQ-086: Map PII scan results to GDPR/CCPA/HIPAA regulation flags.
 """
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List
 
 
 class RegulationFlag(BaseModel):

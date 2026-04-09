@@ -20,7 +20,7 @@ CREATED: 2026-02-16
 
 import logging
 import re
-from typing import Optional, Set, Tuple
+from typing import Set, Tuple
 
 logger = logging.getLogger(__name__)
 

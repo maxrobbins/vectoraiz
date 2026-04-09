@@ -14,10 +14,9 @@ Created: 2026-02-13
 """
 
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import Column, ARRAY, String, text
 from sqlmodel import Field, SQLModel
 
 

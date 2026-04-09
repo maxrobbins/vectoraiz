@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import List
 
 from app.auth.api_key_auth import get_current_user, AuthenticatedUser
-from app.services.import_service import get_import_service, ImportService, validate_import_path
+from app.services.import_service import get_import_service, ImportService
 
 router = APIRouter()
 

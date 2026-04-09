@@ -19,7 +19,6 @@ import asyncio
 import json
 import os
 import tempfile
-import uuid
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -34,7 +33,6 @@ from app.routers.copilot import (
     router as copilot_rest_router,
     ws_router,
     manager,
-    ConnectionManager,
 )
 from app.models.state import (
     Message,
@@ -45,8 +43,6 @@ from app.models.state import (
 from app.services.allie_provider import (
     AiMarketAllieProvider,
     AllieDisabledError,
-    AllieStreamChunk,
-    AllieUsage,
     InsufficientBalanceError,
     MockAllieProvider,
     RateLimitExceededError,

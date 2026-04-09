@@ -565,7 +565,7 @@ class DatabaseConnector:
             arr = pa.array(values, type=pa.string())
             return arr, pa.field(name, pa.string())
 
-        type_name = type(sample).__name__.lower()
+        type(sample).__name__.lower()
 
         # Skip binary columns (M2: BYTEA/BLOB → skip)
         if isinstance(sample, (bytes, bytearray, memoryview)):

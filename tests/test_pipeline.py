@@ -11,11 +11,8 @@ Covers:
 import asyncio
 import csv
 import json
-import os
-import tempfile
 from contextlib import contextmanager
-from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 
@@ -335,7 +332,6 @@ class TestConcurrentPipelines:
                     w.writerow([i, f"{dsid}_row_{i}"])
 
         # Make get_dataset_by_id resolve correctly
-        original_get = pipeline_service.duckdb_service.get_dataset_by_id
 
         def _patched_get(dataset_id):
             csv_file = data_dir / f"{dataset_id}.csv"

@@ -1,7 +1,6 @@
 import pytest
 from pathlib import Path
 from unittest.mock import patch
-import tempfile
 import csv
 
 import pandas as pd

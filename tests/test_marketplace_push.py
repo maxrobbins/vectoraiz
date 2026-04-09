@@ -5,20 +5,17 @@ Tests the marketplace push service in isolation using mocked HTTP responses.
 """
 import json
 import pytest
-import asyncio
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
-from datetime import datetime, timezone
+from unittest.mock import patch, AsyncMock
 
 import httpx
 
 from app.services.marketplace_push_service import (
     MarketplacePushService,
     MarketplacePushError,
-    MAX_RETRIES,
 )
-from app.models.listing_metadata_schemas import ListingMetadata, ColumnSummary
-from app.models.compliance_schemas import ComplianceReport, RegulationFlag
+from app.models.listing_metadata_schemas import ListingMetadata
+from app.models.compliance_schemas import ComplianceReport
 from app.models.attestation_schemas import QualityAttestation
 
 

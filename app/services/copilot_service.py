@@ -27,7 +27,7 @@ UPDATED: BQ-ALLAI-B (2026-02-16) — Agentic loop with tool use
 
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from app.services.metering_service import metering_service, UsageReport
 from app.services.allie_provider import (
@@ -36,14 +36,12 @@ from app.services.allie_provider import (
     get_allie_provider,
 )
 from app.services.prompt_factory import (
-    AllieContext,
-    PromptFactory,
     RiskMode,
     prompt_factory,
     resolve_tone_mode,
 )
 from app.services.context_manager_copilot import context_manager
-from app.core.input_sanitizer import InputSanitizer, SanitizeResult, input_sanitizer
+from app.core.input_sanitizer import input_sanitizer
 from app.core.local_only_guard import is_local_only
 from app.auth.api_key_auth import AuthenticatedUser
 from app.models.copilot import StateSnapshot
@@ -163,7 +161,6 @@ class CoPilotService:
         send_chunk: Callable[[str], Awaitable[None]],
         state_snapshot: Optional[StateSnapshot] = None,
         user_preferences: Optional[Dict[str, Any]] = None,
-        is_first_message: bool = False,
         attachments: Optional[list[ChatAttachment]] = None,
         chat_history: Optional[List[Dict[str, str]]] = None,
     ) -> Tuple[str, Optional[AllieUsage]]:
@@ -257,7 +254,6 @@ class CoPilotService:
         send_heartbeat: Callable[[], Awaitable[None]],
         state_snapshot: Optional[StateSnapshot] = None,
         user_preferences: Optional[Dict[str, Any]] = None,
-        is_first_message: bool = False,
         attachments: Optional[list[ChatAttachment]] = None,
         chat_history: Optional[List[Dict[str, str]]] = None,
     ) -> Tuple[str, Optional[AllieUsage]]:

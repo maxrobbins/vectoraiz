@@ -22,9 +22,8 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
-from sqlmodel import Session as SQLModelSession, select
+from sqlmodel import Session as SQLModelSession
 
 from app.config import settings
 

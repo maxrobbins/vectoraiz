@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.activation_manager import ActivationManager
 from app.services.serial_store import (
     ACTIVE,
-    DEGRADED,
     MIGRATED,
     PROVISIONED,
     UNPROVISIONED,
@@ -20,7 +19,6 @@ from app.services.serial_client import (
     ActivateResult,
     RefreshResult,
     SerialClient,
-    StatusResult,
 )
 
 

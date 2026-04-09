@@ -26,7 +26,6 @@ from fastapi import Depends, Request
 
 from app.config import settings
 from app.services.serial_store import (
-    ACTIVE,
     DEGRADED,
     MIGRATED,
     PROVISIONED,
@@ -34,7 +33,7 @@ from app.services.serial_store import (
     SerialStore,
     get_serial_store,
 )
-from app.services.serial_client import SerialClient, MeterResult
+from app.services.serial_client import SerialClient
 from app.services.offline_queue import OfflineQueue, get_offline_queue
 from app.services.auto_reload_service import check_auto_reload
 

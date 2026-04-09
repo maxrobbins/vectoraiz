@@ -32,7 +32,6 @@ import io
 import json
 import os
 import sys
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -377,7 +376,7 @@ def _test_processing_endpoints(client: VZClient, dataset_id: str,
         data = r.json()
         assert data.get("id") or data.get("dataset_id"), "No id in metadata"
         # Check schema/columns
-        columns = data.get("columns") or data.get("schema") or data.get("column_names")
+        data.get("columns") or data.get("schema") or data.get("column_names")
         suite.record(f"{prefix}/metadata", True, time.time() - t0)
     except Exception as e:
         suite.record(f"{prefix}/metadata", False, time.time() - t0, str(e))

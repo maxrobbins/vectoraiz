@@ -6,9 +6,7 @@ own Postgres when DATABASE_URL is a postgresql:// URL.
 Phase: BQ-VZ-DB-CONNECT
 """
 
-import json
 import os
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -357,7 +355,7 @@ class TestSelfReferentialExtraction:
         # Wait for background task (extraction + pipeline)
         # In tests, the background task runs synchronously via TestClient
         # so by the time we get here it should be done. Check the file exists.
-        parquet_path = Path(os.environ.get("VECTORAIZ_DATA_DIRECTORY", "/data")) / f"{dataset_id}.parquet"
+        Path(os.environ.get("VECTORAIZ_DATA_DIRECTORY", "/data")) / f"{dataset_id}.parquet"
         # The background task may not have completed yet in all test configurations,
         # so we just verify the extract was accepted.
         assert dataset_id  # Non-empty

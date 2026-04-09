@@ -8,10 +8,7 @@ All new code should import from app.services.approval_token_service.
 import warnings
 
 from app.services.approval_token_service import (
-    ALL_CLASSIFIED_TOOLS,
     MUTATION_TOOLS,
-    RISK_TTL,
-    ApprovalTokenService,
     approval_token_service,
 )
 

@@ -15,7 +15,7 @@ from typing import Optional, Dict, List
 import bcrypt
 
 from app.config import settings
-from app.schemas.portal import PortalConfig, DatasetPortalConfig
+from app.schemas.portal import PortalConfig
 
 logger = logging.getLogger(__name__)
 

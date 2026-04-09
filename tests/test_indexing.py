@@ -1,10 +1,7 @@
 import pytest
-from pathlib import Path
-import tempfile
 import csv
 
 from app.services.indexing_service import IndexingService
-from app.services.qdrant_service import get_qdrant_service
 
 
 @pytest.fixture

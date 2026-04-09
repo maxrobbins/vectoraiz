@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 import csv
 
 from fastapi.testclient import TestClient

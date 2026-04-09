@@ -14,31 +14,19 @@ CREATED: BQ-128 Phase 3 (2026-02-14)
 """
 
 import asyncio
-import json
-import os
-import tempfile
 import time
-import uuid
 
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, Session as SQLModelSession, create_engine
 
 from app.core.errors.registry import error_registry
 from app.services.nudge_manager import (
     NudgeManager,
     NudgeMessage,
-    NudgeAnalytics,
-    TriggerConfig,
     NUDGE_TEMPLATES,
     NUDGE_ICONS,
-    nudge_manager,
 )
 from app.models.state import (
     NudgeDismissal,
-    MessageKind,
 )
 
 # Ensure error registry is loaded for tests

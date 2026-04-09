@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 
 from app.models.portal import (
     AccessCodeValidator,
-    get_portal_config,
     save_portal_config,
     reset_portal_config_cache,
 )

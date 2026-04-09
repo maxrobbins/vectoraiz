@@ -18,7 +18,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import jwt as pyjwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
 from fastapi.testclient import TestClient
 
 from app.models.portal import (
@@ -30,8 +29,6 @@ from app.models.portal import (
 from app.schemas.portal import PortalConfig, DatasetPortalConfig, PortalTier
 from app.services.portal_oidc import (
     clear_all_sso_state,
-    clear_discovery_cache,
-    clear_sessions_only,
     log_portal_access,
     get_access_logs,
     clear_access_logs,
@@ -40,8 +37,6 @@ from app.services.portal_oidc import (
     validate_state,
     _pending_states,
     _refresh_tokens,
-    _id_tokens,
-    _cleanup_expired_refresh_tokens,
     store_refresh_token,
     get_refresh_token,
     clear_refresh_token,

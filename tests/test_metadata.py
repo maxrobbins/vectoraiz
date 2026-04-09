@@ -1,6 +1,4 @@
 import pytest
-from pathlib import Path
-import tempfile
 import csv
 
 from app.services.duckdb_service import DuckDBService

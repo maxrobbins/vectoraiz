@@ -13,14 +13,13 @@ import json
 import logging
 import time
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.middleware.portal_auth import get_portal_session
-from app.models.portal import get_portal_config
 from app.schemas.portal import PortalSession, PortalTier
 from app.services.portal_tool_filter import (
     PORTAL_ALLOWED_TOOLS,
@@ -134,7 +133,6 @@ async def portal_allai_chat(
         """Stream SSE events from the agentic LLM loop."""
         try:
             from app.services.allai_agentic_provider import AgenticAllieProvider
-            from app.services.allai_tool_result import ToolResult
 
             provider = AgenticAllieProvider()
 

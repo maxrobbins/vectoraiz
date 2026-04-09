@@ -36,18 +36,17 @@ from sqlmodel import Session as DBSession
 
 from app.core.async_utils import run_sync
 from app.services.search_service import get_search_service, SearchService
-from app.services.allie_provider import get_allie_provider, BaseAllieProvider, AllieDisabledError
+from app.services.allie_provider import get_allie_provider, BaseAllieProvider
 from app.services.prompt_registry import get_prompt_registry, PromptRegistry
 from app.services.citation_parser import get_citation_parser, CitationParser
 from app.services.session_service import SessionService
-from app.services.context_manager import ContextWindowManager, ContextConfig
+from app.services.context_manager import ContextWindowManager
 from app.models.rag import (
     ParsedRAGResponse,
     SourceChunk,
-    SourceMetadata,
-    Citation
+    SourceMetadata
 )
-from app.models.state import Session, Message, MessageRole
+from app.models.state import Message, MessageRole
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +279,7 @@ class RAGService:
         
         # === STEP 1: PERSIST USER MESSAGE ===
         user_msg_tokens = self.context_manager.estimate_tokens(question)
-        user_message = self.session_service.add_message(
+        self.session_service.add_message(
             session_id=session_id,
             role=MessageRole.USER,
             content=question,

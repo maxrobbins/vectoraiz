@@ -8,7 +8,6 @@ import logging
 import os
 from unittest.mock import patch
 
-import pytest
 
 from app.core.channel_config import ChannelType, parse_channel
 

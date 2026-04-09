@@ -10,7 +10,7 @@ Created: 2026-01-25
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 from uuid import UUID
 
@@ -323,13 +323,6 @@ class ContextWindowManager:
         if len(conversation_text) > 4000:
             conversation_text = conversation_text[:4000] + "\n[truncated...]"
 
-        prompt = f"""Summarize the following conversation history into a concise paragraph (2-3 sentences).
-Retain key facts, user requests, and important decisions. Omit pleasantries.
-
-Conversation:
-{conversation_text}
-
-Summary:"""
 
         # Always return a placeholder in sync context (use summarize_messages_async for real summaries)
         return f"(Older context from {len(messages)} messages was summarized for brevity)"

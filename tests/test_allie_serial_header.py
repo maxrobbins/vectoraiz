@@ -8,13 +8,11 @@ Verifies that:
 
 import json
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, MagicMock
 
-import httpx
 
 from app.services.allie_provider import (
     AiMarketAllieProvider,
-    AllieStreamChunk,
     reset_provider,
 )
 

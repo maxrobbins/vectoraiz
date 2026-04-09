@@ -8,7 +8,7 @@ Creates persistent FTS indexes per dataset in background.
 import logging
 import threading
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 
 import duckdb
 

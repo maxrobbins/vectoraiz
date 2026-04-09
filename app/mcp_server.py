@@ -30,7 +30,6 @@ from app.models.connectivity import (
     DatasetIdInput,
     VectorSearchRequest,
     SQLQueryRequest,
-    validate_dataset_id,
 )
 from app.services.connectivity_token_service import ConnectivityTokenError
 from app.services.query_orchestrator import ConnectivityError, QueryOrchestrator
@@ -142,7 +141,7 @@ async def vectoraiz_list_datasets() -> str:
         return result.model_dump_json()
     except ConnectivityError as e:
         raise ValueError(_format_error(e.code, e.message, e.details))
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in vectoraiz_list_datasets")
         raise ValueError(_format_error("internal_error", "An internal error occurred. Check vectorAIz logs for details."))
 
@@ -159,7 +158,7 @@ async def vectoraiz_get_schema(dataset_id: str) -> str:
         return result.model_dump_json()
     except ConnectivityError as e:
         raise ValueError(_format_error(e.code, e.message, e.details))
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in vectoraiz_get_schema")
         raise ValueError(_format_error("internal_error", "An internal error occurred. Check vectorAIz logs for details."))
 
@@ -184,7 +183,7 @@ async def vectoraiz_search(query: str, dataset_id: str = "", top_k: int = 5) -> 
         return result.model_dump_json()
     except ConnectivityError as e:
         raise ValueError(_format_error(e.code, e.message, e.details))
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in vectoraiz_search")
         raise ValueError(_format_error("internal_error", "An internal error occurred. Check vectorAIz logs for details."))
 
@@ -208,7 +207,7 @@ async def vectoraiz_sql(sql: str, dataset_id: str = "") -> str:
         return result.model_dump_json()
     except ConnectivityError as e:
         raise ValueError(_format_error(e.code, e.message, e.details))
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in vectoraiz_sql")
         raise ValueError(_format_error("internal_error", "An internal error occurred. Check vectorAIz logs for details."))
 
@@ -225,7 +224,7 @@ async def vectoraiz_profile_dataset(dataset_id: str) -> str:
         return result.model_dump_json()
     except ConnectivityError as e:
         raise ValueError(_format_error(e.code, e.message, e.details))
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in vectoraiz_profile_dataset")
         raise ValueError(_format_error("internal_error", "An internal error occurred. Check vectorAIz logs for details."))
 
@@ -242,7 +241,7 @@ async def vectoraiz_get_pii_report(dataset_id: str) -> str:
         return result.model_dump_json()
     except ConnectivityError as e:
         raise ValueError(_format_error(e.code, e.message, e.details))
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in vectoraiz_get_pii_report")
         raise ValueError(_format_error("internal_error", "An internal error occurred. Check vectorAIz logs for details."))
 

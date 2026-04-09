@@ -188,7 +188,6 @@ class QualityContractService:
 
     def _check_validity(self, duckdb, read_func, columns) -> DimensionScore:
         """Validate type conformance on a sample using Pandera."""
-        import pandas as pd
 
         details = []
 
@@ -236,7 +235,7 @@ class QualityContractService:
         checks_total = 0
 
         col_names = {c[0].lower(): c[0] for c in columns}
-        col_types = {c[0].lower(): c[1].lower() for c in columns}
+        {c[0].lower(): c[1].lower() for c in columns}
 
         # Rule: start_date < end_date patterns
         date_pairs = [

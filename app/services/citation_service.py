@@ -8,7 +8,7 @@ CREATED: 2026-01-25 (S31)
 
 import re
 import logging
-from typing import List, Optional, Any
+from typing import List, Optional
 from app.models.rag import Citation, SourceChunk, ValidationResult
 
 logger = logging.getLogger(__name__)

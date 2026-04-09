@@ -6,10 +6,9 @@ HTTP status codes (401/403/404/408/429/500/503), auth header parsing, OpenAPI.
 BQ-MCP-RAG Phase 1.
 """
 
-import os
 
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 

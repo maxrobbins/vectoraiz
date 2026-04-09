@@ -7,7 +7,7 @@ dense vectors, hybrid collection creation, and FTS index building.
 """
 
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from uuid import UUID
 import uuid
@@ -90,7 +90,7 @@ class IndexingService:
 
         # Get dataset metadata to identify text columns
         with ephemeral_duckdb_service() as duckdb:
-            metadata = duckdb.get_file_metadata(filepath)
+            duckdb.get_file_metadata(filepath)
 
         # Auto-detect text columns if not specified
         if text_columns is None:

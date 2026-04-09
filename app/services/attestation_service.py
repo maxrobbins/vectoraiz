@@ -21,7 +21,6 @@ from app.models.attestation_schemas import (
     ComplianceStatus,
     QualityScores,
 )
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 

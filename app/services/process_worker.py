@@ -249,7 +249,6 @@ def run_tabular_worker(
     progress_conn: Connection,
     control_conn: Connection,
     memory_limit_mb: int,
-    batch_target_rows: int,
 ) -> None:
     """Subprocess entry point for streaming tabular file processing.
 
@@ -559,7 +558,6 @@ class ProcessWorkerManager:
                 progress_child,
                 control_parent,   # read end for poll/recv
                 settings.process_worker_memory_limit_mb,
-                settings.streaming_batch_target_rows,
             ),
             daemon=True,
         )

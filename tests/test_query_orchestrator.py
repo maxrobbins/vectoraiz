@@ -6,13 +6,8 @@ BQ-MCP-RAG Phase 1.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
-from app.models.connectivity import (
-    ConnectivityToken,
-    VectorSearchRequest,
-    SQLQueryRequest,
-)
 from app.services.query_orchestrator import ConnectivityError, QueryOrchestrator
 from app.services.connectivity_token_service import create_token, revoke_token
 from app.utils.sanitization import sql_quote_literal

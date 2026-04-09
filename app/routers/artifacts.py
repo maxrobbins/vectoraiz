@@ -19,7 +19,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.services.artifacts_service import get_artifacts_service

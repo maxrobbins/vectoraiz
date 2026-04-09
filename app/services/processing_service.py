@@ -6,7 +6,6 @@ import concurrent.futures
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
-from enum import Enum
 import json
 import csv
 
@@ -862,7 +861,7 @@ class ProcessingService:
                     metadata["text_blocks"] = text_blocks_count
                     metadata["tables_extracted"] = table_count
                     record.metadata = metadata
-            except Exception as e:
+            except Exception:
                 _log.exception("Metadata extraction failed for %s", record.id)
                 record.metadata = {
                     "source_type": "document",

@@ -14,9 +14,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.core.database import get_engine, get_session
+from app.core.database import get_engine
 from app.main import app
-from app.models.cached_requests import CachedRequest, ResponseDraft, SyncState
+from app.models.cached_requests import CachedRequest
 from app.models.dataset import DatasetRecord
 from app.services.request_match_service import (
     match_request,

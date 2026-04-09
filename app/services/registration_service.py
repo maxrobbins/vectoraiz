@@ -18,7 +18,6 @@ BQ-102 ST-3: Registration client
 import hashlib
 import logging
 import platform
-import uuid
 from typing import Optional
 
 import httpx

@@ -19,15 +19,13 @@ UPDATED: 2026-03-05 — BQ-VZ-CONTROL-PLANE Step 2 (Security Foundation)
 import asyncio
 import logging
 import time as time_mod
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Awaitable, Callable
 
 from app.auth.api_key_auth import AuthenticatedUser
 from app.services.allai_tool_result import ToolResult
 from app.services.approval_token_service import (
     ALL_CLASSIFIED_TOOLS,
-    AUTO_APPROVE_TOOLS,
     MUTATION_TOOLS,
-    READ_ONLY_TOOLS,
     RISK_TTL,
     approval_token_service,
     check_capabilities,

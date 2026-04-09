@@ -30,7 +30,6 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-from app.config import settings
 from app.auth.api_key_auth import (
     AuthenticatedUser,
     get_current_user,
@@ -654,7 +653,6 @@ async def revoke_key(
 )
 async def list_users(user: AuthenticatedUser = Depends(get_current_user)):
     """List all users. Requires admin role."""
-    from app.middleware.auth import require_admin
     # Manual role check since we can't easily use Depends inside Depends
     _role = getattr(getattr(user, '_request', None), 'state', None)
     # Check via request state or JWT claims

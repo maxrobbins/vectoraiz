@@ -9,9 +9,6 @@ Created: 2026-02-13
 """
 
 import logging
-import mimetypes
-import os
-import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,7 +22,6 @@ from app.services.processing_service import (
     DatasetRecord,
     get_processing_service,
 )
-from app.utils.sanitization import sanitize_filename
 
 logger = logging.getLogger(__name__)
 

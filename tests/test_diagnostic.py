@@ -12,7 +12,7 @@ import time
 import zipfile
 
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, AsyncMock
 
 from app.core.redaction import (
     redact_config,
@@ -559,7 +559,6 @@ class TestDatabaseCollector:
     async def test_returns_alembic_version(self):
         """DatabaseCollector returns backend type and alembic version info."""
         from app.services.diagnostic_collectors import DatabaseCollector
-        from unittest.mock import MagicMock
         from sqlalchemy import create_engine
 
         # Use an in-memory SQLite engine for testing

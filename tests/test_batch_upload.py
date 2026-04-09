@@ -11,9 +11,7 @@ import io
 import json
 import uuid
 from typing import List, Optional
-from unittest.mock import patch, MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app

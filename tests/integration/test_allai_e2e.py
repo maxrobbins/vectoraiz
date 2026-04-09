@@ -18,8 +18,8 @@ import json
 import sys
 import time
 import traceback
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import List
 
 import httpx
 
@@ -410,7 +410,6 @@ async def test_copilot_row_count():
     t0 = time.time()
     resp = await copilot_send("How many rows are in the Barcelona apartments dataset?")
     text = resp["text"].lower()
-    has_answer = "12" in text or "row" in text or "apartment" in text
     ok = len(resp["text"]) > 20 and not resp["has_xml"]
     detail = f"len={len(resp['text'])} has_12={('12' in text)} xml={resp['has_xml']}"
     if resp["error"]:
@@ -421,7 +420,7 @@ async def test_copilot_row_count():
 async def test_copilot_sql_query():
     t0 = time.time()
     resp = await copilot_send("Show me the most expensive apartment in the Barcelona data")
-    text = resp["text"].lower()
+    resp["text"].lower()
     ok = len(resp["text"]) > 20 and not resp["has_xml"]
     detail = f"len={len(resp['text'])} tools={len(resp['tool_results'])} xml={resp['has_xml']}"
     if resp["error"]:
@@ -432,7 +431,7 @@ async def test_copilot_sql_query():
 async def test_copilot_search():
     t0 = time.time()
     resp = await copilot_send("Search for wireless products in my data")
-    text = resp["text"].lower()
+    resp["text"].lower()
     ok = len(resp["text"]) > 20 and not resp["has_xml"]
     detail = f"len={len(resp['text'])} tools={len(resp['tool_results'])} xml={resp['has_xml']}"
     if resp["error"]:
@@ -475,7 +474,7 @@ async def test_copilot_connectivity():
 async def test_copilot_system_status():
     t0 = time.time()
     resp = await copilot_send("Is everything working okay? Check system status.")
-    text = resp["text"].lower()
+    resp["text"].lower()
     ok = len(resp["text"]) > 20 and not resp["has_xml"]
     detail = f"len={len(resp['text'])} tools={len(resp['tool_results'])} xml={resp['has_xml']}"
     if resp["error"]:
@@ -511,7 +510,7 @@ async def test_copilot_average_price():
 async def test_copilot_data_quality():
     t0 = time.time()
     resp = await copilot_send("Are there any issues with my data? Any errors or problems?")
-    text = resp["text"].lower()
+    resp["text"].lower()
     ok = len(resp["text"]) > 30 and not resp["has_xml"]
     detail = f"len={len(resp['text'])} xml={resp['has_xml']}"
     if resp["error"]:
@@ -571,7 +570,7 @@ async def test_copilot_empty_message():
     t0 = time.time()
     resp = await copilot_send("", timeout=20)
     # Should handle gracefully (not crash)
-    ok = resp["error"] is None or "empty" in str(resp.get("error", "")).lower() or len(resp["text"]) >= 0
+    resp["error"] is None or "empty" in str(resp.get("error", "")).lower() or len(resp["text"]) >= 0
     record("Copilot: empty message (graceful)", "allAI", True,  # pass if no crash
            f"text_len={len(resp['text'])} error={resp['error']}", time.time()-t0)
 
@@ -597,7 +596,7 @@ async def test_copilot_invalid_auth():
             if msg.get("type") == "error":
                 error = "correctly_rejected"
     except (websockets.exceptions.ConnectionClosedError,
-            websockets.exceptions.InvalidStatusCode) as e:
+            websockets.exceptions.InvalidStatusCode):
         error = "correctly_rejected"
     except Exception as e:
         error = str(e)

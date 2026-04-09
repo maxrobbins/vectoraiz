@@ -11,11 +11,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import httpx
 
 from app.services.serial_client import (
-    ActivateResult,
-    MeterResult,
-    RefreshResult,
     SerialClient,
-    StatusResult,
 )
 
 

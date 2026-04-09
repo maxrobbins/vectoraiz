@@ -13,7 +13,7 @@ SPEC: BQ-CP-01 section 3.2
 """
 
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 from enum import IntEnum, Enum
 
 

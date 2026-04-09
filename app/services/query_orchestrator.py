@@ -11,7 +11,6 @@ Created: S136
 import logging
 import time
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -121,12 +120,12 @@ class QueryOrchestrator:
         try:
             self.rate_limiter.record_request(token.id, "list_datasets")
 
-            from app.services.processing_service import get_processing_service, ProcessingStatus
+            from app.services.processing_service import get_processing_service
             from app.core.database import get_session_context
             from app.models.dataset import DatasetRecord as DBDatasetRecord
             from sqlmodel import select
 
-            processing = get_processing_service()
+            get_processing_service()
 
             # Query only externally_queryable datasets
             with get_session_context() as session:
@@ -621,7 +620,7 @@ class QueryOrchestrator:
             self.rate_limiter.record_request(token.id, "get_pii_report")
 
             # Validate dataset exists and is queryable (prevents path traversal)
-            record = self._get_queryable_dataset(dataset_id)
+            self._get_queryable_dataset(dataset_id)
 
             # Read cached PII scan from the known processed directory
             import json as _json

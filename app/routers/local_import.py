@@ -4,7 +4,6 @@ Provides browse, process, and status endpoints for importing files from
 a host-mounted directory into the vectorAIz processing pipeline.
 """
 import os
-import uuid
 
 import logging
 from pathlib import Path

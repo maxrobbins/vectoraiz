@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 from app.auth.api_key_auth import AuthenticatedUser, get_current_user
 from app.config import settings
 from app.services.serial_metering import metered, MeterDecision
-from app.models.connectivity import VALID_SCOPES
 from app.services.connectivity_metrics import get_connectivity_metrics
 from app.services.connectivity_setup_generator import ConnectivitySetupGenerator, SUPPORTED_PLATFORMS
 from app.services.connectivity_token_service import (

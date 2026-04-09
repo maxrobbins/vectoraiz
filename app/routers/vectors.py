@@ -7,7 +7,6 @@ AsyncQdrantClient (available in qdrant_client) for native async.
 """
 
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Optional
 
 from app.core.async_utils import run_sync
 from app.services.qdrant_service import get_qdrant_service, QdrantService

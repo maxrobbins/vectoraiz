@@ -15,7 +15,7 @@ CREATED: 2026-02-14
 """
 
 import pytest
-from app.core.input_sanitizer import InputSanitizer, SanitizeResult
+from app.core.input_sanitizer import InputSanitizer
 
 
 @pytest.fixture

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.core.async_utils import run_sync
 from app.core.errors import VectorAIzError
-from app.services.batch_service import _check_magic_bytes, _MAGIC_SIGNATURES
+from app.services.batch_service import _check_magic_bytes
 from app.utils.sanitization import validate_path_traversal
 
 from app.config import settings
@@ -39,7 +39,7 @@ from app.services.marketplace_push_service import MarketplacePushService, get_ma
 from app.services.batch_service import get_batch_service, BatchService
 from app.services.preview_service import get_preview_service, PreviewService
 from app.services.notification_service import get_notification_service
-from app.schemas.batch import ConfirmRequest, BatchConfirmResponse
+from app.schemas.batch import ConfirmRequest
 from app.auth.api_key_auth import get_current_user, AuthenticatedUser
 from app.services.serial_metering import metered, MeterDecision
 
@@ -997,7 +997,7 @@ async def generate_dataset_attestation(
         return attestation
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
+    except Exception:
         logger.exception("Attestation generation failed for dataset %s", dataset_id)
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -1049,7 +1049,7 @@ async def generate_listing_metadata(
         return metadata
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
+    except Exception:
         logger.exception("Listing metadata generation failed for dataset %s", dataset_id)
         raise HTTPException(status_code=500, detail="Internal server error")
 

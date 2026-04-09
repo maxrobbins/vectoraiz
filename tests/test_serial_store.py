@@ -6,7 +6,6 @@ BQ-VZ-SERIAL-CLIENT
 
 import json
 import os
-import tempfile
 
 import pytest
 
@@ -17,7 +16,6 @@ from app.services.serial_store import (
     MIGRATED,
     PROVISIONED,
     UNPROVISIONED,
-    SerialState,
     SerialStore,
 )
 

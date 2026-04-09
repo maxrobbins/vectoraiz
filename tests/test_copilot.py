@@ -20,11 +20,9 @@ UPDATED: S94/BQ-073 (2026-02-06) — Added metering integration tests
 SPEC: BQ-CP-01, Acceptance Criteria 13; BQ-073 AC 9, 10, 11
 """
 
-import os
-import json
 import pytest
 import httpx
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -462,7 +460,7 @@ class TestRESTStatus:
     def test_status_after_disconnect(self, client):
         """Status after WS disconnect should return active=False."""
         with client.websocket_connect("/ws/copilot") as ws:
-            connected = ws.receive_json()
+            ws.receive_json()
 
         # After disconnect
         response = client.get("/api/copilot/status")

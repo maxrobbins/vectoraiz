@@ -10,7 +10,6 @@ Updated: 2026-01-25 - Added session/chat models
 """
 
 from typing import List, Optional, Dict, Any
-from uuid import UUID
 from pydantic import BaseModel, Field
 
 

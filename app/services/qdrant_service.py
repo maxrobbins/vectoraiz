@@ -168,7 +168,7 @@ class QdrantService:
                 "segments_count": info.segments_count,
                 "optimizer_status": str(info.optimizer_status) if info.optimizer_status else "unknown",
             }
-        except UnexpectedResponse as e:
+        except UnexpectedResponse:
             raise ValueError(f"Collection '{collection_name}' not found")
     
     def list_collections(self) -> List[Dict[str, Any]]:

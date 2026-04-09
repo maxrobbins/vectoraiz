@@ -11,15 +11,12 @@ PHASE: BQ-MCP-RAG Phase 2 Tests
 CREATED: S136
 """
 
-import asyncio
 import json
-from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.services.allai_tools import ALLAI_TOOLS
-from app.services.allai_tool_result import ToolResult
 from app.services.allai_tool_executor import AllAIToolExecutor
 
 
@@ -509,7 +506,7 @@ class TestSystemPromptConnectivityGuide:
     """The connectivity guide must be in the system prompt."""
 
     def test_prompt_factory_includes_connectivity_guide(self):
-        from app.services.prompt_factory import PromptFactory, AllieContext, ToneMode
+        from app.services.prompt_factory import PromptFactory, AllieContext
 
         factory = PromptFactory()
         prompt = factory.build_system_prompt(AllieContext())

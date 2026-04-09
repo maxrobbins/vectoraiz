@@ -13,7 +13,6 @@ Updated: February 7, 2026 - Added per-column PII config persistence (BQ-065)
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 from datetime import datetime
-import hashlib
 import json
 import logging
 

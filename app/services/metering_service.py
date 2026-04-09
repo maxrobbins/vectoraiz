@@ -54,7 +54,6 @@ import httpx
 
 from app.config import settings
 from .deduction_queue import deduction_queue
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 

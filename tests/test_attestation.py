@@ -9,12 +9,11 @@ import hashlib
 import json
 import pytest
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 from app.models.attestation_schemas import (
     QualityAttestation,
-    ColumnMetrics,
     DataProfileSummary,
     PIIRiskAssessment,
     ComplianceStatus,

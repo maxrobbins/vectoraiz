@@ -485,7 +485,7 @@ async def extract_tables(
     body: ExtractRequest,
     background_tasks: BackgroundTasks,
 ) -> Dict[str, Any]:
-    conn = _get_connection(connection_id)
+    _get_connection(connection_id)
 
     if not body.tables and not body.custom_sql:
         raise HTTPException(status_code=422, detail="Provide 'tables' or 'custom_sql'")

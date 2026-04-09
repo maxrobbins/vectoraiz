@@ -16,12 +16,11 @@ from fastapi.testclient import TestClient
 
 from app.models.portal import (
     AccessCodeValidator,
-    get_portal_config,
     save_portal_config,
     reset_portal_config_cache,
 )
 from app.schemas.portal import PortalConfig, DatasetPortalConfig, PortalTier, PortalSession
-from app.middleware.portal_auth import create_portal_jwt, get_portal_jwt_secret
+from app.middleware.portal_auth import create_portal_jwt
 
 
 @pytest.fixture(autouse=True)

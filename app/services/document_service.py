@@ -7,10 +7,9 @@ BQ-VZ-PERF Phase 3: Replaced Tika sidecar with NativeFormatProcessor (pure Pytho
 
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Protocol
+from typing import Optional, List, Dict, Any
 from abc import ABC, abstractmethod
 from datetime import datetime
-import json
 
 from app.config import settings
 

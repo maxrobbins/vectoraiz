@@ -11,11 +11,8 @@ Tests the full device registration flow:
 6. Private keys never leave local storage
 """
 
-import asyncio
 import base64
 import json
-import os
-import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, patch, MagicMock
 

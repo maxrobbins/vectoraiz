@@ -14,7 +14,6 @@ Phase: BQ-127 — Air-Gap Architecture
 Created: S130 (2026-02-13)
 """
 
-import json
 import os
 import pytest
 from unittest.mock import patch

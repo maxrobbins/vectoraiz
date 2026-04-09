@@ -24,7 +24,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from app.models.copilot import StateSnapshot
-from app.services.prompt_factory import AllieContext, ToneMode, resolve_tone_mode
+from app.services.prompt_factory import AllieContext, resolve_tone_mode
 from app.core.local_only_guard import is_local_only
 
 logger = logging.getLogger(__name__)

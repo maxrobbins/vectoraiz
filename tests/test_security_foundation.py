@@ -13,7 +13,6 @@ PHASE: BQ-VZ-CONTROL-PLANE Step 2 Tests
 CREATED: 2026-03-05
 """
 
-import asyncio
 import hashlib
 import json
 import os
@@ -306,7 +305,7 @@ class TestExecutorRouting:
             mock_dispatch.return_value = MagicMock(
                 frontend_data={"test": True}, llm_summary="success"
             )
-            result = await executor.execute("get_system_status", {})
+            await executor.execute("get_system_status", {})
             mock_dispatch.assert_called_once_with("get_system_status", {})
 
     @pytest.mark.asyncio
@@ -316,7 +315,7 @@ class TestExecutorRouting:
             mock_dispatch.return_value = MagicMock(
                 frontend_data={}, llm_summary="logged"
             )
-            result = await executor.execute("log_feedback", {"category": "general", "sentiment": "positive", "summary": "test", "raw_message": "test"})
+            await executor.execute("log_feedback", {"category": "general", "sentiment": "positive", "summary": "test", "raw_message": "test"})
             mock_dispatch.assert_called_once()
 
     @pytest.mark.asyncio

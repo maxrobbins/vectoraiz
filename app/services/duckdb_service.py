@@ -1,6 +1,5 @@
 import duckdb
 import logging
-import os
 import re
 from contextlib import contextmanager
 from pathlib import Path

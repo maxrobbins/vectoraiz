@@ -13,7 +13,7 @@ import os
 import threading
 import time
 from collections import OrderedDict
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 

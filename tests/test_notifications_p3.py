@@ -104,7 +104,6 @@ class TestBatchUploadResilience:
 
     def test_bad_file_continues_processing(self, client, svc):
         """One file failing to save should not prevent other files from uploading."""
-        from app.services.batch_service import BatchService
 
         call_count = [0]
 
@@ -150,7 +149,6 @@ class TestBatchUploadResilience:
 
     def test_notifications_created_for_successes_and_failures(self, client, svc):
         """Each file should generate a notification (success or error)."""
-        from app.services.batch_service import BatchService
 
         call_count = [0]
 
@@ -194,7 +192,6 @@ class TestBatchUploadResilience:
 
     def test_summary_notification_correct_counts(self, client, svc):
         """Summary notification should report accurate success/failure counts."""
-        from app.services.batch_service import BatchService
 
         call_count = [0]
 

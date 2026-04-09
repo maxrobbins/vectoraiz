@@ -13,9 +13,7 @@ CREATED: 2026-02-14
 """
 
 import json
-import uuid
 import pytest
-from unittest.mock import patch, MagicMock
 
 from sqlmodel import Session as DBSession, SQLModel, create_engine, select
 

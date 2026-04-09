@@ -17,12 +17,7 @@ All tests use MockAllieProvider (VECTORAIZ_ALLIE_PROVIDER=mock). Zero real API c
 CREATED: BQ-128 Phase 4 (2026-02-14)
 """
 
-import asyncio
 import json
-import os
-import tempfile
-import time
-import uuid
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
@@ -45,13 +40,10 @@ from app.routers.copilot import (
 )
 from app.models.state import (
     Message,
-    MessageKind,
     MessageRole,
     Session as ChatSession,
 )
 from app.services.allie_provider import (
-    AllieDisabledError,
-    MockAllieProvider,
     reset_provider,
 )
 from app.auth.api_key_auth import AuthenticatedUser
@@ -281,7 +273,7 @@ class TestConnectionRateLimit:
                 # If we get here, the connection was accepted — check if it's
                 # immediately closed
                 try:
-                    data = ws.receive_json()
+                    ws.receive_json()
                     # If we somehow got a message, connection wasn't rejected
                     # but it might be the close message
                 except Exception:
@@ -563,7 +555,6 @@ class TestStopCancellation:
 
         # Patch get_legacy_session_context to track persisted messages
         persisted_messages = []
-        original_persist = None
 
         from app.routers import copilot as copilot_mod
         original_persist_fn = copilot_mod._persist_message

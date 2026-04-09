@@ -7,11 +7,9 @@ Phase: BQ-VZ-DB-CONNECT
 import datetime
 import decimal
 import uuid
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 
 from app.services.db_connector import DatabaseConnector, get_db_connector
@@ -293,7 +291,7 @@ class TestBulkIntrospection:
     @patch.object(DatabaseConnector, "get_engine")
     def test_bulk_pg_returns_table_info_list(self, mock_get_engine):
         """Bulk PG introspection returns List[TableInfo] with correct structure."""
-        mock_conn_obj = MagicMock()
+        MagicMock()
         mock_get_engine.return_value = MagicMock()
 
         # Mock the connection context manager and execute calls

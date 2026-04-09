@@ -8,7 +8,6 @@ Uses httpx for async HTTP, PyJWT for RS256 ID token verification with JWKS.
 All OIDC state is in-memory (local VZ instance, not cloud).
 """
 
-import hashlib
 import logging
 import os
 import secrets

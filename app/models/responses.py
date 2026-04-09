@@ -3,8 +3,7 @@ Standardized response models for API documentation.
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+from typing import List, Dict, Any
 
 
 class HealthResponse(BaseModel):

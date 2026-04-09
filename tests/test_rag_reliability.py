@@ -14,7 +14,7 @@ Covers:
 import json
 import pytest
 from datetime import datetime, date
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 from app.services.rag_service import RAGService
@@ -252,8 +252,8 @@ class TestChatStreamPersistence:
         svc = self._make_stream_service()
 
         async def fake_stream(**kw):
-            return
-            yield  # make it a generator
+            if False:  # make it an async generator
+                yield
 
         svc._allie.stream = fake_stream
 

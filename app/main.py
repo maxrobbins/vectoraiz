@@ -2,7 +2,6 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 import faulthandler
 import logging
@@ -19,7 +18,6 @@ from app.config import settings
 # BQ-127: Stock routers — always imported regardless of mode
 from app.routers import health, datasets, search, sql, vectors, pii, docs, diagnostics, imports
 from app.routers import auth as auth_router_module
-from app.auth.api_key_auth import get_current_user
 from app.core.database import init_db, close_db
 from app.core.structured_logging import setup_logging
 from app.core.errors import VectorAIzError
@@ -317,7 +315,7 @@ async def lifespan(app: FastAPI):
             except Exception:
                 logger.exception("Artifact cleanup error")
 
-    artifact_cleanup_task = asyncio.create_task(
+    asyncio.create_task(
         _safe_background_task("artifact_cleanup", _artifact_cleanup_loop())
     )
 
@@ -350,7 +348,7 @@ async def lifespan(app: FastAPI):
     # BQ-VZ-QUEUE: File processing queue (concurrency=2)
     from app.services.processing_queue import get_processing_queue
     _processing_queue = get_processing_queue()
-    processing_queue_tasks = _processing_queue.start(wrapper=_safe_background_task)
+    _processing_queue.start(wrapper=_safe_background_task)
 
     # RC#22-F3: Re-queue files with status='uploaded' so crash-recovered records get processed
     try:
@@ -546,7 +544,6 @@ def create_app() -> FastAPI:
     admin_route_dependency = [Depends(require_admin)]
 
     # Legacy alias — still works for existing code that references it
-    protected_route_dependency = any_user_dependency
 
     # ------------------------------------------------------------------
     # BQ-127: Register routers — stock (always) vs connected (conditional)

@@ -21,22 +21,13 @@ CREATED: BQ-ALLAI-FILES (2026-02-16)
 
 import io
 import json
-import os
-import shutil
-import struct
-import tempfile
 import time
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.auth.api_key_auth import AuthenticatedUser, get_current_user
 from app.services.mime_detector import detect_mime_for_zip, detect_mime_from_header
 from app.services.chat_attachment_service import (
-    ALLOWED_MIME_TYPES,
-    ATTACHMENT_TTL_SECONDS,
-    MAX_FILE_SIZE,
     ChatAttachment,
     ChatAttachmentService,
     resize_if_needed,

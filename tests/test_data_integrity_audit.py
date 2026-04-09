@@ -19,11 +19,9 @@ CREATED: 2026-02-14
 
 import asyncio
 import json
-import os
 import tempfile
-import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

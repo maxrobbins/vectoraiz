@@ -16,24 +16,19 @@ import asyncio
 import base64
 import hashlib
 import json
-import os
-import tempfile
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from sqlmodel import select
 
-from app.core.database import get_engine, get_session_context
+from app.core.database import get_session_context
 from app.models.dataset import DatasetRecord
 from app.models.fulfillment import FulfillmentLog
 from app.services.fulfillment_service import (
     CHUNK_SIZE,
-    MAX_FILE_SIZE,
-    WINDOW_SIZE,
     FulfillmentService,
 )
 from app.services.trust_channel_client import TrustChannelClient

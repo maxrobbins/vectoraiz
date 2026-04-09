@@ -16,7 +16,7 @@ import logging
 import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any
 
 import httpx
 
