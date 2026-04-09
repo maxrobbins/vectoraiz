@@ -4,9 +4,10 @@
 
 vectorAIz transforms your corporate data into searchable, AI-optimized assets — completely private, running entirely on your hardware. Connect your own LLM, upload your files, and query everything with natural language.
 
-[![License: ELv2](https://img.shields.io/badge/License-ELv2-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Docker](https://img.shields.io/badge/docker-required-blue.svg)](https://www.docker.com/)
+[![License: ELv2](https://img.shields.io/badge/License-ELv2-3F51B5.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-3F51B5.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/docker-required-3F51B5.svg)](https://www.docker.com/)
+[![ai.market](https://img.shields.io/badge/ai.market-product-0F6E56.svg)](https://ai.market)
 
 ---
 
