@@ -148,6 +148,91 @@ class TestMetadataEditorPatch:
         assert resp.json()["listing_status"] == "draft"
 
 
+class TestDeleteReturns204NoBody:
+    """Test DELETE /api/raw/files/{id} returns 204 with no body (Gate 3 R1 fix)."""
+
+    def test_delete_returns_204_no_body(self, client, registered_file):
+        """DELETE returns 204 with empty body — frontend must not parse JSON."""
+        file_id = registered_file["id"]
+        resp = client.delete(f"/api/raw/files/{file_id}")
+        assert resp.status_code == 204
+        assert resp.content == b""
+
+    def test_delete_nonexistent_returns_404(self, client):
+        """DELETE on nonexistent file returns 404 (still JSON-parseable)."""
+        resp = client.delete("/api/raw/files/00000000-0000-0000-0000-000000000000")
+        assert resp.status_code == 404
+        assert "detail" in resp.json()
+
+
+class TestPriceCentsInResponse:
+    """Test that price_cents from listing is included in file detail response (Gate 3 R1 fix)."""
+
+    def test_price_cents_null_when_no_listing(self, client, registered_file):
+        """price_cents is null when no listing exists."""
+        file_id = registered_file["id"]
+        resp = client.get(f"/api/raw/files/{file_id}")
+        assert resp.status_code == 200
+        assert resp.json()["price_cents"] is None
+
+    def test_price_cents_from_listing(self, client, registered_file):
+        """price_cents reflects the listing's price."""
+        file_id = registered_file["id"]
+        client.post("/api/raw/listings", json={
+            "raw_file_id": file_id,
+            "title": "Priced",
+            "description": "Has a price",
+            "price_cents": 999,
+        })
+        resp = client.get(f"/api/raw/files/{file_id}")
+        assert resp.status_code == 200
+        assert resp.json()["price_cents"] == 999
+
+    def test_price_cents_zero_means_free(self, client, registered_file):
+        """price_cents=0 is valid (free listing) and distinct from null."""
+        file_id = registered_file["id"]
+        client.post("/api/raw/listings", json={
+            "raw_file_id": file_id,
+            "title": "Free",
+            "description": "Free listing",
+            "price_cents": 0,
+        })
+        resp = client.get(f"/api/raw/files/{file_id}")
+        assert resp.status_code == 200
+        assert resp.json()["price_cents"] == 0
+
+    def test_price_cents_in_patch_response(self, client, registered_file):
+        """PATCH response also includes price_cents from listing."""
+        file_id = registered_file["id"]
+        client.post("/api/raw/listings", json={
+            "raw_file_id": file_id,
+            "title": "Priced",
+            "description": "Has a price",
+            "price_cents": 500,
+        })
+        resp = client.patch(f"/api/raw/files/{file_id}", json={
+            "metadata": {"title": "Updated"},
+        })
+        assert resp.status_code == 200
+        assert resp.json()["price_cents"] == 500
+
+
+class TestFileContentEndpoint:
+    """Test GET /api/raw/files/{id}/content — authenticated file download (Gate 3 R1 fix)."""
+
+    def test_content_download(self, client, registered_file):
+        """Content endpoint streams the file with correct headers."""
+        file_id = registered_file["id"]
+        resp = client.get(f"/api/raw/files/{file_id}/content")
+        assert resp.status_code == 200
+        assert b"id,name,value" in resp.content
+
+    def test_content_nonexistent_404(self, client):
+        """Content endpoint returns 404 for missing file."""
+        resp = client.get("/api/raw/files/00000000-0000-0000-0000-000000000000/content")
+        assert resp.status_code == 404
+
+
 class TestListingReadinessLogic:
     """Test listing readiness checklist logic (backend data contract)."""
 

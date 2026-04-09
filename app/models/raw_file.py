@@ -24,6 +24,10 @@ class RawFile(SQLModel, table=True):
     the catalog entry including content hash for integrity verification.
     """
 
+    # TODO: BQ-VZ-DATA-CHANNEL — Add user_id (ForeignKey to users.id) for per-user
+    # ownership checks. Currently all raw files are accessible to any authenticated
+    # admin, which is acceptable for single-tenant installs but must be addressed
+    # before multi-tenant support.
     __tablename__ = "raw_files"
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True, max_length=36)

@@ -22,6 +22,10 @@ class RawListing(SQLModel, table=True):
     Lifecycle: draft → listed → delisted
     """
 
+    # TODO: BQ-VZ-DATA-CHANNEL — Ownership is inherited from the raw_file's
+    # (future) user_id. Until user_id is added to raw_files, all listings are
+    # effectively shared across authenticated admins. Must be resolved before
+    # multi-tenant support.
     __tablename__ = "raw_listings"
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True, max_length=36)

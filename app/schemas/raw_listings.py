@@ -33,6 +33,7 @@ class RawFileResponse(BaseModel):
     mime_type: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
     listing_status: Optional[str] = Field(default=None, description="Listing status: draft/listed/none")
+    price_cents: Optional[int] = Field(default=None, description="Listing price in cents (from associated listing)")
     created_at: datetime
     updated_at: datetime
 

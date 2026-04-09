@@ -62,6 +62,11 @@ async function apiFetch<T>(
     throw new Error(message);
   }
 
+  // 204 No Content has no body — return undefined instead of parsing
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json();
 }
 
@@ -226,6 +231,7 @@ export interface RawFile {
   mime_type: string | null;
   metadata: Record<string, unknown> | null;
   listing_status: string | null;
+  price_cents: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -781,6 +787,43 @@ export const rawFilesApi = {
     }),
 
   downloadUrl: (id: string) => `${getApiUrl()}/api/raw/download/${id}`,
+
+  downloadRawFile: async (file: RawFile): Promise<void> => {
+    const url = `${getApiUrl()}/api/raw/files/${file.id}/content`;
+    const headers: Record<string, string> = {};
+    const apiKey = getStoredApiKey();
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+    }
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error('Download failed');
+    }
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = file.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  },
+
+  getFileObjectUrl: async (fileId: string): Promise<string> => {
+    const url = `${getApiUrl()}/api/raw/files/${fileId}/content`;
+    const headers: Record<string, string> = {};
+    const apiKey = getStoredApiKey();
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+    }
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error('Failed to load file content');
+    }
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+  },
 };
 
 // Diagnostics API (Phase 4)

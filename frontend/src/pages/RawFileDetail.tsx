@@ -61,7 +61,7 @@ function ListingReadiness({ file, isConnected }: { file: RawFile; isConnected: b
   const hasDescription = !!(meta?.description);
   const hasTags = Array.isArray(meta?.tags) ? (meta.tags as string[]).length > 0 : false;
   const metadataComplete = hasTitle && hasDescription && hasTags;
-  const hasPriceOrFree = file.listing_status === "listed" || file.listing_status === "draft";
+  const hasPriceOrFree = file.price_cents != null && file.price_cents > 0;
 
   const checks = [
     { label: "File registered", passed: true },
@@ -98,12 +98,47 @@ function ListingReadiness({ file, isConnected }: { file: RawFile; isConnected: b
 
 function FilePreview({ file }: { file: RawFile }) {
   const mime = file.mime_type || "";
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    const needsPreview = mime.startsWith("image/") || mime.startsWith("audio/") || mime === "application/pdf";
+    if (!needsPreview) return;
+
+    let cancelled = false;
+    let url: string | null = null;
+    rawFilesApi.getFileObjectUrl(file.id).then((u) => {
+      if (cancelled) { URL.revokeObjectURL(u); return; }
+      url = u;
+      setObjectUrl(u);
+    }).catch(() => {
+      if (!cancelled) setLoadError(true);
+    });
+
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [file.id, mime]);
 
   if (mime.startsWith("image/")) {
     return (
       <div className="rounded-lg border bg-muted/50 p-4 flex items-center justify-center min-h-[200px]">
-        <FileImage className="w-16 h-16 text-muted-foreground" />
-        <span className="ml-3 text-sm text-muted-foreground">Image preview: {file.filename}</span>
+        {objectUrl && !loadError ? (
+          <img
+            src={objectUrl}
+            alt={file.filename}
+            className="max-h-[400px] max-w-full object-contain rounded"
+            onError={() => setLoadError(true)}
+          />
+        ) : loadError ? (
+          <>
+            <FileImage className="w-16 h-16 text-muted-foreground" />
+            <span className="ml-3 text-sm text-muted-foreground">Failed to load preview</span>
+          </>
+        ) : (
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        )}
       </div>
     );
   }
@@ -115,18 +150,43 @@ function FilePreview({ file }: { file: RawFile }) {
           <FileAudio className="w-8 h-8 text-muted-foreground" />
           <span className="text-sm font-medium">{file.filename}</span>
         </div>
-        <div className="h-10 bg-muted rounded flex items-center justify-center">
-          <span className="text-xs text-muted-foreground">Audio player placeholder</span>
-        </div>
+        {objectUrl && !loadError ? (
+          <audio controls className="w-full" src={objectUrl} />
+        ) : loadError ? (
+          <span className="text-xs text-muted-foreground">Failed to load audio</span>
+        ) : (
+          <div className="h-10 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
       </div>
     );
   }
 
   if (mime === "application/pdf") {
     return (
-      <div className="rounded-lg border bg-muted/50 p-4 flex items-center justify-center min-h-[200px]">
-        <FileText className="w-16 h-16 text-muted-foreground" />
-        <span className="ml-3 text-sm text-muted-foreground">PDF: {file.filename}</span>
+      <div className="rounded-lg border bg-muted/50 p-4 min-h-[400px]">
+        {objectUrl && !loadError ? (
+          <object
+            data={objectUrl}
+            type="application/pdf"
+            className="w-full h-[500px] rounded"
+          >
+            <p className="text-sm text-muted-foreground text-center py-8">
+              PDF preview not supported in this browser.{" "}
+              <button className="underline" onClick={() => rawFilesApi.downloadRawFile(file)}>Download</button> instead.
+            </p>
+          </object>
+        ) : loadError ? (
+          <div className="flex items-center justify-center min-h-[200px]">
+            <FileText className="w-16 h-16 text-muted-foreground" />
+            <span className="ml-3 text-sm text-muted-foreground">Failed to load PDF preview</span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center min-h-[200px]">
+            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+          </div>
+        )}
       </div>
     );
   }
@@ -213,7 +273,10 @@ export default function RawFileDetail() {
 
   const handleVectorize = () => {
     if (!file) return;
-    navigate("/datasets", { state: { vectorizeRawFile: file.id } });
+    toast({
+      title: "Coming Soon",
+      description: "Vectorization from raw files is not yet available. Upload the file as a dataset to vectorize it.",
+    });
   };
 
   if (loading) {
@@ -253,10 +316,18 @@ export default function RawFileDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <a href={rawFilesApi.downloadUrl(file.id)} target="_blank" rel="noreferrer">
-              <Download className="w-4 h-4 mr-1" />Download
-            </a>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              try {
+                await rawFilesApi.downloadRawFile(file);
+              } catch {
+                toast({ title: "Error", description: "Failed to download file", variant: "destructive" });
+              }
+            }}
+          >
+            <Download className="w-4 h-4 mr-1" />Download
           </Button>
           <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
             {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}

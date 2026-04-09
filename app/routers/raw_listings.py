@@ -42,7 +42,7 @@ router = APIRouter()
 download_router = APIRouter()
 
 
-def _file_response(raw_file, listing_status: Optional[str] = None) -> RawFileResponse:
+def _file_response(raw_file, listing_status: Optional[str] = None, price_cents: Optional[int] = None) -> RawFileResponse:
     return RawFileResponse(
         id=raw_file.id,
         filename=raw_file.filename,
@@ -52,6 +52,7 @@ def _file_response(raw_file, listing_status: Optional[str] = None) -> RawFileRes
         mime_type=raw_file.mime_type,
         metadata=raw_file.metadata_,
         listing_status=listing_status,
+        price_cents=price_cents,
         created_at=raw_file.created_at,
         updated_at=raw_file.updated_at,
     )
@@ -164,12 +165,15 @@ async def get_raw_file(
     svc: RawFileService = Depends(get_raw_file_service),
     listing_svc: RawListingService = Depends(get_raw_listing_service),
 ):
+    # TODO: BQ-VZ-DATA-CHANNEL — Add user_id filter once ownership is on the
+    # raw_files model. Currently any authenticated admin can access any file.
     raw_file = svc.get_file(file_id)
     if raw_file is None:
         raise HTTPException(status_code=404, detail="Raw file not found")
     listing = listing_svc.get_listing_for_file(file_id)
     listing_status = listing.status if listing else None
-    return _file_response(raw_file, listing_status=listing_status)
+    price_cents = listing.price_cents if listing else None
+    return _file_response(raw_file, listing_status=listing_status, price_cents=price_cents)
 
 
 @router.patch(
@@ -188,7 +192,8 @@ async def update_raw_file(
         raise HTTPException(status_code=404, detail="Raw file not found")
     listing = listing_svc.get_listing_for_file(file_id)
     listing_status = listing.status if listing else None
-    return _file_response(raw_file, listing_status=listing_status)
+    price_cents = listing.price_cents if listing else None
+    return _file_response(raw_file, listing_status=listing_status, price_cents=price_cents)
 
 
 @router.delete(
@@ -202,6 +207,27 @@ async def delete_raw_file(
 ):
     if not svc.delete_file(file_id):
         raise HTTPException(status_code=404, detail="Raw file not found")
+
+
+@router.get(
+    "/files/{file_id}/content",
+    summary="Download raw file content (admin auth)",
+    description="Serve the raw file for authenticated admin download and preview.",
+)
+async def get_raw_file_content(
+    file_id: str,
+    svc: RawFileService = Depends(get_raw_file_service),
+):
+    raw_file = svc.get_file(file_id)
+    if raw_file is None:
+        raise HTTPException(status_code=404, detail="Raw file not found")
+    if not os.path.isfile(raw_file.file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    return FileResponse(
+        path=raw_file.file_path,
+        filename=raw_file.filename,
+        media_type=raw_file.mime_type or "application/octet-stream",
+    )
 
 
 @router.post(
