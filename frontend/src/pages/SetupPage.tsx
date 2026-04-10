@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Loader2, AlertCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBrand } from "@/contexts/BrandContext";
 import { toast } from "@/hooks/use-toast";
 import { getApiUrl } from "@/lib/api";
 import VersionBadge from "@/components/VersionBadge";
@@ -13,6 +14,7 @@ import VersionBadge from "@/components/VersionBadge";
 const SetupPage = () => {
   const navigate = useNavigate();
   const { setup } = useAuth();
+  const brand = useBrand();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -67,7 +69,7 @@ const SetupPage = () => {
     try {
       await setup(username, password);
       toast({
-        title: "Welcome to vectorAIz!",
+        title: `${brand.welcomeTitle}!`,
         description: "Your admin account is ready.",
       });
       navigate("/", { replace: true });
@@ -81,7 +83,7 @@ const SetupPage = () => {
   if (checking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <img src="/vectoraiz-logo-sm.png" alt="vectorAIz" className="w-10 h-10 rounded-xl animate-pulse" />
+        <img src={brand.logoSmPath} alt={brand.sidebarLogoAlt} className="w-10 h-10 rounded-xl animate-pulse" />
       </div>
     );
   }
@@ -91,9 +93,9 @@ const SetupPage = () => {
       <div className="w-full max-w-md space-y-8">
         {/* Logo + heading */}
         <div className="flex flex-col items-center gap-4">
-          <img src="/vectoraiz-logo-sm.png" alt="vectorAIz" className="w-14 h-14 rounded-2xl" />
+          <img src={brand.logoSmPath} alt={brand.sidebarLogoAlt} className="w-14 h-14 rounded-2xl" />
           <div className="text-center space-y-1">
-            <h1 className="text-2xl font-bold text-foreground">Welcome to vectorAIz</h1>
+            <h1 className="text-2xl font-bold text-foreground">{brand.welcomeTitle}</h1>
             <p className="text-muted-foreground">Create your admin account to get started</p>
           </div>
         </div>

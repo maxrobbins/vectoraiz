@@ -27,6 +27,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { type Channel } from "@/hooks/useChannel";
+import { useBrand } from "@/contexts/BrandContext";
+import { VECTORAIZ_BRAND, type BrandConfig } from "@/lib/brandConfig";
 
 const STORAGE_KEY = "vz-onboarding-complete";
 
@@ -56,9 +58,10 @@ interface StepDef {
 
 const ICON_CLASS = "w-8 h-8";
 
-const DIRECT_STEPS: StepDef[] = [
+function getDirectSteps(brand: BrandConfig): StepDef[] {
+  return [
   {
-    title: "Welcome to vectorAIz",
+    title: brand.welcomeTitle,
     subtitle: "Upload your data",
     description:
       "Get started by uploading CSV, JSON, or Parquet files. Your data stays on your machine — always.",
@@ -85,18 +88,20 @@ const DIRECT_STEPS: StepDef[] = [
     title: "Ready!",
     subtitle: "You're all set",
     description:
-      "Explore your data, run queries, and build insights. You can also list datasets on ai.market when you're ready.",
+      `Explore your data, run queries, and build insights in ${brand.name}. You can also list datasets on ai.market when you're ready.`,
     icon: <Rocket className={ICON_CLASS} />,
     features: ["Full-text & vector search", "Dashboard analytics", "ai.market publishing"],
   },
 ];
+}
 
-const MARKETPLACE_STEPS: StepDef[] = [
+function getMarketplaceSteps(brand: BrandConfig): StepDef[] {
+  return [
   {
-    title: "Welcome to vectorAIz for ai.market",
+    title: brand.welcomeTitle,
     subtitle: "Connect to your ai.market account",
     description:
-      "Your vectorAIz instance is linked to ai.market. Manage your data and publish listings directly.",
+      `Your ${brand.name} instance is linked to ai.market. Manage your data and publish listings directly.`,
     icon: <Globe className={ICON_CLASS} />,
     features: ["ai.market integration", "Secure device linking", "Local-only processing"],
   },
@@ -125,13 +130,15 @@ const MARKETPLACE_STEPS: StepDef[] = [
     features: ["One-click publish", "Revenue tracking", "Listing management"],
   },
 ];
+}
 
-const AIM_DATA_STEPS: StepDef[] = [
+function getAimDataSteps(brand: BrandConfig): StepDef[] {
+  return [
   {
-    title: "Welcome to AIM Data",
+    title: brand.welcomeTitle,
     subtitle: "Turn files into sellable data products",
     description:
-      "Use vectorAIz to organize files, prepare metadata, and publish listings to ai.market from one workflow.",
+      `Use ${brand.name} to organize files, prepare metadata, and publish listings to ai.market from one workflow.`,
     icon: <Globe className={ICON_CLASS} />,
     features: ["Seller-first workflow", "Local file management", "ai.market publishing"],
   },
@@ -152,14 +159,15 @@ const AIM_DATA_STEPS: StepDef[] = [
     features: ["Listing wizard", "Metadata editing", "Marketplace publishing"],
   },
 ];
+}
 
 /** Exported for tests: get steps for a given channel */
-export function getStepsForChannel(channel: Channel): StepDef[] {
+export function getStepsForChannel(channel: Channel, brand: BrandConfig = VECTORAIZ_BRAND): StepDef[] {
   return channel === "marketplace"
-    ? MARKETPLACE_STEPS
+    ? getMarketplaceSteps(brand)
     : channel === "aim-data"
-      ? AIM_DATA_STEPS
-      : DIRECT_STEPS;
+      ? getAimDataSteps(brand)
+      : getDirectSteps(brand);
 }
 
 interface OnboardingWizardProps {
@@ -169,7 +177,8 @@ interface OnboardingWizardProps {
 
 export default function OnboardingWizard({ channel, onComplete }: OnboardingWizardProps) {
   const [step, setStep] = useState(0);
-  const steps = getStepsForChannel(channel);
+  const brand = useBrand();
+  const steps = getStepsForChannel(channel, brand);
   const current = steps[step];
   const isLast = step === steps.length - 1;
 

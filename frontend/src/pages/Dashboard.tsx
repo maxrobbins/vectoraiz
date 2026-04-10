@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMarketplace } from "@/contexts/MarketplaceContext";
+import { useBrand } from "@/contexts/BrandContext";
 import { useDatasets } from "@/hooks/useApi";
 import { useNavigate } from "react-router-dom";
 import { useMode } from "@/contexts/ModeContext";
@@ -14,6 +15,7 @@ const Dashboard = () => {
   const { data: datasetsData, loading: datasetsLoading } = useDatasets();
   const { hasFeature } = useMode();
   const { openModal } = useUpload();
+  const brand = useBrand();
 
   const publishedCount = getPublishedCount();
   const totalEarnings = getTotalEarnings();
@@ -38,9 +40,9 @@ const Dashboard = () => {
     <div className="space-y-8">
       {/* Welcome Section */}
       <div className="space-y-2">
-        <h2 className="text-3xl font-bold text-foreground">Welcome to vectorAIz</h2>
+        <h2 className="text-3xl font-bold text-foreground">{brand.welcomeTitle}</h2>
         <p className="text-muted-foreground">
-          Your local Artificial Intelligence ingestion engine.
+          {brand.tagline}
         </p>
       </div>
 

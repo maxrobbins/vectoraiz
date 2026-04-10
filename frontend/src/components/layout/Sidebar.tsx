@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMode } from "@/contexts/ModeContext";
+import { useBrand } from "@/contexts/BrandContext";
 import { useChannel } from "@/hooks/useChannel";
 
 interface NavItem {
@@ -96,6 +97,7 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const location = useLocation();
   const { hasFeature, isStandalone } = useMode();
   const channel = useChannel();
+  const brand = useBrand();
 
   const { top, bottom } = getOrderedItems(channel);
 
@@ -133,14 +135,14 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
     >
       {/* Logo */}
       <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
-        <a href="https://vectoraiz.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+        <a href={brand.externalUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
           <img
-            src="/vectoraiz-logo.jpg"
-            alt="vectorAIz"
+            src={brand.logoPath}
+            alt={brand.sidebarLogoAlt}
             className="w-8 h-8 rounded-lg object-cover"
           />
           {!collapsed && (
-            <span className="text-foreground font-semibold text-lg tracking-tight">vectorAIz</span>
+            <span className="text-foreground font-semibold text-lg tracking-tight">{brand.name}</span>
           )}
         </a>
       </div>

@@ -18,6 +18,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useBrand } from "@/contexts/BrandContext";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -37,7 +38,8 @@ interface TopBarProps {
 const TopBar = ({ onOpenCommandPalette }: TopBarProps) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const title = pageTitles[location.pathname] || "vectorAIz";
+  const brand = useBrand();
+  const title = pageTitles[location.pathname] || brand.name;
   const { status } = useBackendConnection();
   const { logout } = useAuth();
 
@@ -98,7 +100,7 @@ const TopBar = ({ onOpenCommandPalette }: TopBarProps) => {
           </TooltipTrigger>
           <TooltipContent>
             {status === 'connected'
-              ? "Connected to vectorAIz backend"
+              ? `Connected to ${brand.name} backend`
               : status === 'disconnected'
                 ? "Backend not reachable. Check Settings to configure."
                 : "Checking backend connection..."}

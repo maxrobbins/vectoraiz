@@ -36,6 +36,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useBrand } from "@/contexts/BrandContext";
 import { useUpload } from "@/contexts/UploadContext";
 import DatasetsSkeleton from "@/components/skeletons/DatasetsSkeleton";
 import { type Dataset } from "@/types/mockDatasets";
@@ -105,6 +106,7 @@ const convertApiDataset = (apiDataset: ApiDataset): Dataset => ({
 });
 
 const Datasets = () => {
+  const brand = useBrand();
   const navigate = useNavigate();
   const { isPublished, getPublishedData } = useMarketplace();
   const { hasFeature } = useMode();
@@ -259,7 +261,7 @@ const Datasets = () => {
                   No datasets yet
                 </h3>
                 <p className="text-muted-foreground max-w-sm">
-                  Upload your first file to get started. vectorAIz supports CSV,
+                  Upload your first file to get started. {brand.name} supports CSV,
                   JSON, Parquet, and more.
                 </p>
               </div>

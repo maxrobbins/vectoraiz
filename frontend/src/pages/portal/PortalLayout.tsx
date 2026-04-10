@@ -8,11 +8,13 @@
 import { Outlet } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
+import { useBrand } from "@/contexts/BrandContext";
 import { usePortalAuth } from "@/hooks/usePortalAuth";
 import PortalAllAIChat from "./PortalAllAIChat";
 
 const PortalLayout = () => {
   const { config, ssoUser, logout } = usePortalAuth();
+  const brand = useBrand();
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -49,7 +51,7 @@ const PortalLayout = () => {
       <footer className="border-t border-border px-6 py-4 text-center">
         <p className="text-sm text-muted-foreground">
           Powered by{" "}
-          <span className="font-medium text-foreground">vectorAIz</span>
+          <span className="font-medium text-foreground">{brand.name}</span>
         </p>
       </footer>
 

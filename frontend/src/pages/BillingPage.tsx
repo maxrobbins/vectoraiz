@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { useBrand } from "@/contexts/BrandContext";
 import { toast } from "@/hooks/use-toast";
 import { getApiUrl } from "@/lib/api";
 
@@ -39,6 +40,7 @@ interface AutoReloadConfig {
 }
 
 const BillingPage = () => {
+  const brand = useBrand();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Credits state
@@ -354,7 +356,7 @@ const BillingPage = () => {
                   Already purchased credits? <span className="font-semibold">Recover your balance</span>
                 </p>
                 <p className="text-xs text-indigo-300/70">
-                  If you reinstalled vectorAIz, sign in to restore your credit balance.
+                  If you reinstalled {brand.name}, sign in to restore your credit balance.
                 </p>
               </div>
             </button>

@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { BrandProvider, useBrand } from "./contexts/BrandContext";
 import { ModeProvider, useMode } from "./contexts/ModeContext";
 import { MarketplaceProvider } from "./contexts/MarketplaceContext";
 import { UploadProvider } from "./contexts/UploadContext";
@@ -40,6 +42,29 @@ import PortalSearch from "./pages/portal/PortalSearch";
 import PortalDatasets from "./pages/portal/PortalDatasets";
 
 const queryClient = new QueryClient();
+
+const BrandEffects = () => {
+  const brand = useBrand();
+
+  useEffect(() => {
+    document.title = brand.metaTitle;
+
+    const setMetaContent = (selector: string, content: string) => {
+      const tag = document.head.querySelector<HTMLMetaElement>(selector);
+      if (tag) {
+        tag.content = content;
+      }
+    };
+
+    setMetaContent('meta[name="description"]', brand.metaDescription);
+    setMetaContent('meta[name="author"]', brand.metaAuthor);
+    setMetaContent('meta[property="og:title"]', brand.ogTitle);
+    setMetaContent('meta[property="og:description"]', brand.metaDescription);
+    setMetaContent('meta[name="twitter:site"]', brand.twitterSite);
+  }, [brand]);
+
+  return null;
+};
 
 /** Redirects to /login when not authenticated. Shows nothing while auth is loading. */
 const RequireAuth = ({ children }: { children: React.ReactNode }) => {
@@ -82,13 +107,15 @@ const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <BrowserRouter>
-          <AuthProvider>
-            <ModeProvider>
-              <CoPilotProvider>
-                <Toaster />
-                <Sonner />
-                <Routes>
+        <BrandProvider>
+          <BrandEffects />
+          <BrowserRouter>
+            <AuthProvider>
+              <ModeProvider>
+                <CoPilotProvider>
+                  <Toaster />
+                  <Sonner />
+                  <Routes>
                   {/* Public routes — outside MainLayout */}
                   <Route path="/setup" element={<SetupPage />} />
                   <Route path="/login" element={<LoginPage />} />
@@ -136,11 +163,12 @@ const App = () => (
                   </Route>
 
                   <Route path="*" element={<NotFound />} />
-                </Routes>
-              </CoPilotProvider>
-            </ModeProvider>
-          </AuthProvider>
-        </BrowserRouter>
+                  </Routes>
+                </CoPilotProvider>
+              </ModeProvider>
+            </AuthProvider>
+          </BrowserRouter>
+        </BrandProvider>
       </TooltipProvider>
     </QueryClientProvider>
   </ErrorBoundary>

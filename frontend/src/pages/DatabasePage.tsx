@@ -56,6 +56,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useBrand } from "@/contexts/BrandContext";
 import { toast } from "@/hooks/use-toast";
 import {
   databaseApi,
@@ -138,6 +139,7 @@ const statusBadge = (status: string) => {
 // ===========================================================================
 
 const DatabasePage = () => {
+  const brand = useBrand();
   const navigate = useNavigate();
 
   // -- View state --
@@ -459,7 +461,7 @@ const DatabasePage = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <p className="text-muted-foreground">
-            Connect to external databases to import data into vectorAIz
+            Connect to external databases to import data into {brand.name}
           </p>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={fetchConnections} className="gap-2">

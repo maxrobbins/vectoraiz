@@ -68,6 +68,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { getApiUrl, systemApi } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBrand } from "@/contexts/BrandContext";
 import { useMode } from "@/contexts/ModeContext";
 import ConnectivitySettings from "@/components/ConnectivitySettings";
 
@@ -75,6 +76,7 @@ import ConnectivitySettings from "@/components/ConnectivitySettings";
 const DEFAULT_API_URL = '';
 
 const SettingsPage = () => {
+  const brand = useBrand();
   // Dirty state tracking for Save button
   const [isDirty, setIsDirty] = useState(false);
 
@@ -368,7 +370,7 @@ const SettingsPage = () => {
         }
         toast({
           title: "Backend connected",
-          description: "Successfully connected to vectorAIz backend.",
+          description: `Successfully connected to ${brand.name} backend.`,
         });
       } else {
         setBackendTestStatus('error');
@@ -421,7 +423,7 @@ const SettingsPage = () => {
     <div className="space-y-6 max-w-3xl pb-20">
       <div>
         <p className="text-muted-foreground">
-          Configure vectorAIz to match your workflow
+          Configure {brand.settingsTitle} to match your workflow
         </p>
       </div>
 
@@ -454,7 +456,7 @@ const SettingsPage = () => {
             </div>
             <div>
               <CardTitle className="text-foreground">Backend Connection</CardTitle>
-              <CardDescription>Configure the vectorAIz backend API URL</CardDescription>
+              <CardDescription>Configure the {brand.name} backend API URL</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -527,7 +529,7 @@ const SettingsPage = () => {
             </div>
             <div>
               <CardTitle className="text-foreground">API Keys</CardTitle>
-              <CardDescription>Manage your vectorAIz API keys for programmatic access</CardDescription>
+              <CardDescription>Manage your {brand.name} API keys for programmatic access</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -1092,7 +1094,7 @@ docker compose -f docker-compose.customer.yml up -d vectoraiz`}
           {/* About footer */}
           <div className="pt-3 border-t border-border space-y-3">
             <p className="text-sm text-muted-foreground">
-              vectorAIz{versionInfo?.current ? ` ${versionInfo.current.replace(/^v/, '')}` : ""}
+              {brand.name}{versionInfo?.current ? ` ${versionInfo.current.replace(/^v/, '')}` : ""}
             </p>
             <div className="flex flex-wrap gap-4">
               <a
@@ -1433,7 +1435,7 @@ const PortalSettingsSection = () => {
             onChange={(e) => setPortalBaseUrl(e.target.value)}
           />
           <p className="text-xs text-muted-foreground">
-            Required. The external URL where your VZ instance is reachable.
+            Required. The external URL where your {brand.name} instance is reachable.
           </p>
         </div>
 
