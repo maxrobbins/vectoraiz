@@ -1,4 +1,5 @@
 import { Globe, MessageCircle, ExternalLink } from "lucide-react";
+import { useBrand } from "@/contexts/BrandContext";
 
 interface EmptyStateProps {
   isStandalone: boolean;
@@ -6,6 +7,8 @@ interface EmptyStateProps {
 }
 
 export default function EmptyState({ isStandalone, allieAvailable }: EmptyStateProps) {
+  const { docsConnectedModeUrl } = useBrand();
+
   if (isStandalone || !allieAvailable) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center gap-4">
@@ -21,7 +24,7 @@ export default function EmptyState({ isStandalone, allieAvailable }: EmptyStateP
           </p>
         </div>
         <a
-          href="https://ai.market/docs/vectoraiz/connected-mode"
+          href={docsConnectedModeUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-xs text-primary hover:underline"

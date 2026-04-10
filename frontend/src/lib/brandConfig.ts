@@ -19,6 +19,11 @@ export type BrandConfig = {
   documentationUrl: string;
   githubUrl: string;
   issueTrackerUrl: string;
+  importDir: string;
+  importDirEnvVar: string;
+  docsConnectedModeUrl: string;
+  devApiUrl: string;
+  prodApiUrl: string;
 };
 
 export const VECTORAIZ_BRAND: BrandConfig = {
@@ -42,6 +47,11 @@ export const VECTORAIZ_BRAND: BrandConfig = {
   documentationUrl: "https://github.com/aidotmarket/vectoraiz",
   githubUrl: "https://github.com/aidotmarket/vectoraiz",
   issueTrackerUrl: "https://github.com/aidotmarket/vectoraiz/issues",
+  importDir: "~/vectoraiz-imports/",
+  importDirEnvVar: "VECTORAIZ_IMPORT_DIR",
+  docsConnectedModeUrl: "https://ai.market/docs/vectoraiz/connected-mode",
+  devApiUrl: "https://vectoraiz-backend-production.up.railway.app",
+  prodApiUrl: "",
 };
 
 export const AIM_CHANNEL_BRAND: BrandConfig = {
@@ -65,6 +75,11 @@ export const AIM_CHANNEL_BRAND: BrandConfig = {
   documentationUrl: "https://github.com/aidotmarket/vectoraiz",
   githubUrl: "https://github.com/aidotmarket/vectoraiz",
   issueTrackerUrl: "https://github.com/aidotmarket/vectoraiz/issues",
+  importDir: "~/aim-imports/",
+  importDirEnvVar: "AIM_IMPORT_DIR",
+  docsConnectedModeUrl: "https://ai.market/docs/aim-channel/connected-mode",
+  devApiUrl: "",
+  prodApiUrl: "",
 };
 
 function getRuntimeBrandName(): string {

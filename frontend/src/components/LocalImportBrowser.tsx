@@ -24,6 +24,7 @@ import {
   type ImportProgress,
   type ImportFileResult,
 } from "@/lib/api";
+import { useBrand } from "@/contexts/BrandContext";
 import { toast } from "sonner";
 
 type Phase = "browse" | "importing" | "complete";
@@ -68,6 +69,8 @@ export function LocalImportBrowser({
   onSuccess,
   onClose,
 }: LocalImportBrowserProps) {
+  const { importDir, importDirEnvVar } = useBrand();
+
   // Browse state
   const [rootPath, setRootPath] = useState("");
   const [currentPath, setCurrentPath] = useState("");
@@ -308,9 +311,9 @@ export function LocalImportBrowser({
                 No files found in import directory.
               </p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Add files to ~/vectoraiz-imports/ on your machine,
+                Add files to {importDir} on your machine,
                 <br />
-                or set VECTORAIZ_IMPORT_DIR in your .env file.
+                or set {importDirEnvVar} in your .env file.
               </p>
             </div>
           </div>

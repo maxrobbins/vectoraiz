@@ -1,23 +1,35 @@
 // API Configuration and Client
+import { getActiveBrand } from "@/lib/brandConfig";
 
 // Get API URL from localStorage or environment variable or default.
 // Default is empty string (same-origin relative URLs) so the frontend
 // works when served from the backend on any host (Railway, Docker, etc.).
 export function getApiUrl(): string {
+  const brand = getActiveBrand();
+
   if (typeof window !== 'undefined') {
     const stored = localStorage.getItem('vectoraiz_api_url');
     if (stored) return stored;
   }
   // VITE_API_URL is injected at build time by Railway.
-  // Fallback: if not set AND we're on dev.vectoraiz.com, use the known backend.
+  // Fallback: if not set, use brand-specific URLs when needed.
   const envUrl = import.meta.env.VITE_API_URL;
   if (envUrl) return envUrl;
   
-  // Smart fallback for split-service deploys (frontend ≠ backend origin)
-  if (typeof window !== 'undefined' && window.location.hostname === 'dev.vectoraiz.com') {
-    return 'https://vectoraiz-backend-production.up.railway.app';
+  if (typeof window !== 'undefined') {
+    const brandHostname = new URL(brand.externalUrl).hostname;
+    const devHostname = `dev.${brandHostname}`;
+
+    if (window.location.hostname === devHostname) {
+      return brand.devApiUrl;
+    }
+
+    if (window.location.hostname === brandHostname) {
+      return brand.prodApiUrl;
+    }
   }
-  return ''; // same-origin (works when frontend is served from backend)
+
+  return brand.prodApiUrl; // same-origin when empty
 }
 
 // Read stored API key for auth header injection
@@ -1042,4 +1054,3 @@ export const importApi = {
       method: 'POST',
     }),
 };
-
