@@ -28,7 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { type Channel } from "@/hooks/useChannel";
 import { useBrand } from "@/contexts/BrandContext";
-import { VECTORAIZ_BRAND, type BrandConfig } from "@/lib/brandConfig";
+import { getActiveBrand, type BrandConfig } from "@/lib/brandConfig";
 
 const STORAGE_KEY = "vz-onboarding-complete";
 
@@ -162,7 +162,7 @@ function getAimDataSteps(brand: BrandConfig): StepDef[] {
 }
 
 /** Exported for tests: get steps for a given channel */
-export function getStepsForChannel(channel: Channel, brand: BrandConfig = VECTORAIZ_BRAND): StepDef[] {
+export function getStepsForChannel(channel: Channel, brand: BrandConfig = getActiveBrand()): StepDef[] {
   return channel === "marketplace"
     ? getMarketplaceSteps(brand)
     : channel === "aim-data"
