@@ -541,10 +541,11 @@ ALLAI_TOOLS = [
     {
         "name": "create_artifact_from_query",
         "description": (
-            "Create a CSV artifact by running a SQL query and saving the results directly to a file. "
+            "Create an export artifact by running a SQL query and saving the results directly to a file. "
             "Use this for large data exports that would exceed chat display limits — e.g. "
             "'export all transactions from Q4', 'save all rows where price > 500'. "
-            "Results are streamed directly to file, bypassing output size limits. "
+            "Results are written directly to a standalone export file in CSV, XLSX, JSON, or Parquet format, "
+            "bypassing output size limits. "
             "Only SELECT queries are allowed. Tables are named dataset_{dataset_id}."
         ),
         "input_schema": {
@@ -558,12 +559,17 @@ ALLAI_TOOLS = [
                     "type": "string",
                     "description": "SQL SELECT query. Tables: dataset_{dataset_id}",
                 },
+                "format": {
+                    "type": "string",
+                    "enum": ["csv", "xlsx", "json", "parquet"],
+                    "description": "Export file format. Must match or determine the filename extension.",
+                },
                 "description": {
                     "type": "string",
                     "description": "Brief description of what this export contains.",
                 },
             },
-            "required": ["filename", "query", "description"],
+            "required": ["filename", "query", "format", "description"],
         },
     },
     {

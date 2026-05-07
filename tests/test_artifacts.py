@@ -9,6 +9,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone, timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -348,3 +349,222 @@ class TestPathTraversal:
         assert (artifact_dir / "content.txt").exists()
         # The user's filename should NOT be a file
         assert not (artifact_dir / "user-chosen-name.txt").exists()
+
+
+def test_tool_format_param_schema():
+    from app.services.allai_tools import ALLAI_TOOLS
+
+    tool = next(t for t in ALLAI_TOOLS if t["name"] == "create_artifact_from_query")
+    schema = tool["input_schema"]
+
+    assert schema["properties"]["format"]["enum"] == ["csv", "xlsx", "json", "parquet"]
+    assert "format" in schema["required"]
+
+
+class _FakeResult:
+    def __init__(self, rows):
+        self.description = [("id",), ("name",), ("amount",)]
+        self._rows = list(rows)
+        self._offset = 0
+
+    def fetchmany(self, size):
+        batch = self._rows[self._offset:self._offset + size]
+        self._offset += len(batch)
+        return batch
+
+
+class _FakeConnection:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def execute(self, query):
+        return _FakeResult(self._rows)
+
+    def close(self):
+        pass
+
+
+class _FakeDuckDBService:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def create_ephemeral_connection(self):
+        return _FakeConnection(self._rows)
+
+
+class _FakeDuckDBContext:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def __enter__(self):
+        return _FakeDuckDBService(self._rows)
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def _install_query_export_fakes(monkeypatch, tmp_path, rows):
+    from app.config import settings
+    from app.services import artifacts_service
+    from app.services.artifacts_service import ArtifactsService
+
+    export_dir = tmp_path / "export"
+    export_dir.mkdir(parents=True)
+    monkeypatch.setattr(artifacts_service, "EXPORT_DIR", export_dir)
+    monkeypatch.setenv("HOST_EXPORT_DIR", str(export_dir))
+    monkeypatch.setattr(settings, "mode", "standalone")
+
+    class _SQLService:
+        def validate_query(self, query):
+            return True, None
+
+        def _resolve_datasets(self, dataset_id):
+            return []
+
+    monkeypatch.setattr("app.services.sql_service.get_sql_service", lambda: _SQLService())
+    monkeypatch.setattr("app.services.sql_service.SQLService._create_views", lambda conn, datasets: None)
+    monkeypatch.setattr(
+        "app.services.processing_service.get_processing_service",
+        lambda: SimpleNamespace(list_datasets=lambda: [SimpleNamespace(id="ds")]),
+    )
+    monkeypatch.setattr(
+        "app.services.duckdb_service.ephemeral_duckdb_service",
+        lambda: _FakeDuckDBContext(rows),
+    )
+
+    svc = ArtifactsService()
+    svc._artifacts_dir = tmp_path / "artifacts"
+    svc._artifacts_dir.mkdir(parents=True)
+    svc._rate_limits.clear()
+    return svc, export_dir
+
+
+def _create_query_export(monkeypatch, tmp_path, fmt, rows=None, filename=None):
+    rows = rows or [(1, "alpha", 10.5), (2, "beta", 20.25), (3, "gamma", 30)]
+    svc, export_dir = _install_query_export_fakes(monkeypatch, tmp_path, rows)
+    artifact = svc.create_artifact_from_query(
+        filename=filename or f"query-export.{fmt}",
+        query="SELECT * FROM dataset_ds",
+        description="query export",
+        user_id="local",
+        fmt=fmt,
+    )
+    return svc, export_dir, artifact
+
+
+def _read_export_rows(path, fmt):
+    if fmt == "csv":
+        import csv
+        with open(path, newline="", encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+
+    if fmt == "xlsx":
+        from openpyxl import load_workbook
+        wb = load_workbook(path)
+        ws = wb.active
+        rows = list(ws.iter_rows(values_only=True))
+        header = rows[0]
+        return [dict(zip(header, row)) for row in rows[1:]]
+
+    if fmt == "json":
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    if fmt == "parquet":
+        import pyarrow.parquet as pq
+        return pq.read_table(path).to_pylist()
+
+    raise AssertionError(f"unexpected format: {fmt}")
+
+
+def test_standalone_writes_to_data_export(monkeypatch, tmp_path):
+    svc, export_dir, artifact = _create_query_export(monkeypatch, tmp_path, "csv")
+
+    export_path = export_dir / "query-export.csv"
+    assert export_path.exists()
+    assert artifact.format == "csv"
+    assert (svc._get_artifact_dir(artifact.id) / "content.csv").exists()
+
+
+def test_export_csv_format(monkeypatch, tmp_path):
+    _, export_dir, _ = _create_query_export(monkeypatch, tmp_path, "csv")
+
+    rows = _read_export_rows(export_dir / "query-export.csv", "csv")
+    assert rows[0]["name"] == "alpha"
+    assert rows[1]["amount"] == "20.25"
+
+
+def test_export_xlsx_format(monkeypatch, tmp_path):
+    _, export_dir, _ = _create_query_export(monkeypatch, tmp_path, "xlsx")
+
+    rows = _read_export_rows(export_dir / "query-export.xlsx", "xlsx")
+    assert rows[0]["name"] == "alpha"
+    assert rows[2]["amount"] == 30
+
+
+def test_export_json_format(monkeypatch, tmp_path):
+    _, export_dir, _ = _create_query_export(monkeypatch, tmp_path, "json")
+
+    rows = _read_export_rows(export_dir / "query-export.json", "json")
+    assert rows == [
+        {"id": 1, "name": "alpha", "amount": 10.5},
+        {"id": 2, "name": "beta", "amount": 20.25},
+        {"id": 3, "name": "gamma", "amount": 30},
+    ]
+
+
+def test_export_parquet_format(monkeypatch, tmp_path):
+    _, export_dir, _ = _create_query_export(monkeypatch, tmp_path, "parquet")
+
+    rows = _read_export_rows(export_dir / "query-export.parquet", "parquet")
+    assert rows[0]["name"] == "alpha"
+    assert rows[2]["amount"] == 30
+
+
+def test_path_canonicalization_blocks_symlink_and_traversal(monkeypatch, tmp_path):
+    from app.services import artifacts_service
+    from app.services.artifacts_service import ArtifactsService
+
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    monkeypatch.setattr(artifacts_service, "EXPORT_DIR", export_dir)
+    monkeypatch.setenv("HOST_EXPORT_DIR", str(export_dir))
+
+    assert ArtifactsService._canonicalize_export_destination("safe.csv", "csv") == (
+        export_dir / "safe.csv"
+    ).resolve(strict=False)
+
+    with pytest.raises(ValueError, match="path separators"):
+        ArtifactsService._canonicalize_export_destination("../escape.csv", "csv")
+
+    symlink_path = export_dir / "linked.csv"
+    symlink_path.symlink_to(tmp_path / "outside.csv")
+    with pytest.raises(ValueError, match="symlink|escapes"):
+        ArtifactsService._canonicalize_export_destination("linked.csv", "csv")
+
+
+def test_export_row_count_parity(monkeypatch, tmp_path):
+    expected_count = 3
+    for fmt in ["csv", "xlsx", "json", "parquet"]:
+        _, export_dir, _ = _create_query_export(
+            monkeypatch,
+            tmp_path / fmt,
+            fmt,
+            filename=f"query-export-{fmt}.{fmt}",
+        )
+        rows = _read_export_rows(export_dir / f"query-export-{fmt}.{fmt}", fmt)
+        assert len(rows) == expected_count
+
+
+def test_call_path_gating_ownership_split(monkeypatch, tmp_path):
+    from app.config import settings
+
+    svc, _ = _install_query_export_fakes(monkeypatch, tmp_path, [(1, "alpha", 10)])
+    monkeypatch.setattr(settings, "mode", "connected")
+
+    with pytest.raises(PermissionError, match="standalone"):
+        svc.create_artifact_from_query(
+            filename="query-export.csv",
+            query="SELECT * FROM dataset_ds",
+            description="query export",
+            user_id="local",
+        )

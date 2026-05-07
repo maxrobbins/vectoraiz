@@ -33,7 +33,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from app.config import settings
 
@@ -50,6 +50,7 @@ MAX_CREATES_PER_MIN = 5
 MAX_FILENAME_LENGTH = 255
 ARTIFACT_TTL_DAYS = 7
 SCHEMA_VERSION = 1
+EXPORT_DIR = Path("/data/export")
 
 FILENAME_CHARSET = re.compile(r'^[a-zA-Z0-9._-]+$')
 SCRIPT_TAG_RE = re.compile(r'<script\b[^>]*>.*?</script>', re.IGNORECASE | re.DOTALL)
@@ -59,17 +60,28 @@ EVENT_HANDLER_RE = re.compile(r'\s+on\w+\s*=', re.IGNORECASE)
 class ArtifactFormat(str, Enum):
     TXT = "txt"
     CSV = "csv"
+    XLSX = "xlsx"
     JSON = "json"
     MD = "md"
     HTML = "html"
+    PARQUET = "parquet"
 
 
 MIME_TYPES = {
     ArtifactFormat.TXT: "text/plain",
     ArtifactFormat.CSV: "text/csv",
+    ArtifactFormat.XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ArtifactFormat.JSON: "application/json",
     ArtifactFormat.MD: "text/markdown",
     ArtifactFormat.HTML: "text/html",
+    ArtifactFormat.PARQUET: "application/vnd.apache.parquet",
+}
+
+QUERY_EXPORT_FORMATS = {
+    ArtifactFormat.CSV,
+    ArtifactFormat.XLSX,
+    ArtifactFormat.JSON,
+    ArtifactFormat.PARQUET,
 }
 
 
@@ -218,6 +230,85 @@ class ArtifactsService:
         """Get content file path using format enum extension."""
         return artifact_dir / f"content.{fmt.value}"
 
+    @classmethod
+    def _canonicalize_export_destination(cls, filename: str, fmt: str) -> Path:
+        """Return a real export path under /data/export for a sanitized filename."""
+        export_root = EXPORT_DIR
+        if not os.environ.get("HOST_EXPORT_DIR"):
+            raise ValueError(
+                "Export directory is not configured: HOST_EXPORT_DIR is unset"
+            )
+        if not export_root.exists():
+            raise FileNotFoundError(
+                "Export directory is not mounted: /data/export is missing"
+            )
+        if not export_root.is_dir():
+            raise ValueError("Export directory is invalid: /data/export is not a directory")
+        if not os.access(export_root, os.W_OK):
+            raise PermissionError(
+                "Export directory is read-only: /data/export is not writable"
+            )
+
+        raw_filename = filename.strip() if filename else ""
+        if os.path.basename(raw_filename) != raw_filename:
+            raise ValueError("Export filename cannot contain path separators")
+        safe_filename = cls._validate_filename(raw_filename)
+        expected_suffix = f".{fmt}"
+        if Path(safe_filename).suffix.lower() != expected_suffix:
+            stem = safe_filename.rsplit(".", 1)[0] if "." in safe_filename else safe_filename
+            safe_filename = f"{stem}{expected_suffix}"
+
+        root_real = export_root.resolve(strict=True)
+        dest = export_root / safe_filename
+        dest_parent_real = dest.parent.resolve(strict=True)
+        if dest_parent_real != root_real:
+            raise ValueError("Export destination escapes /data/export")
+
+        dest_real = dest.resolve(strict=False)
+        if root_real != dest_real and root_real not in dest_real.parents:
+            raise ValueError("Export destination escapes /data/export")
+        if dest.exists() and dest.is_symlink():
+            raise ValueError("Export destination cannot be a symlink")
+        return dest_real
+
+    @staticmethod
+    def _write_export(records: Iterable[dict], fmt: ArtifactFormat, dest: Path) -> None:
+        """Write query records in the requested export format."""
+        rows = list(records)
+        columns = list(rows[0].keys()) if rows else []
+
+        if fmt == ArtifactFormat.CSV:
+            import csv
+            with open(dest, "w", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=columns)
+                writer.writeheader()
+                writer.writerows(rows)
+            return
+
+        if fmt == ArtifactFormat.XLSX:
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.append(columns)
+            for row in rows:
+                ws.append([row.get(column) for column in columns])
+            wb.save(dest)
+            return
+
+        if fmt == ArtifactFormat.JSON:
+            with open(dest, "w", encoding="utf-8") as f:
+                json.dump(rows, f, ensure_ascii=False, default=str)
+            return
+
+        if fmt == ArtifactFormat.PARQUET:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+            table = pa.Table.from_pylist(rows)
+            pq.write_table(table, dest)
+            return
+
+        raise ValueError(f"Unsupported export format: {fmt.value}")
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -304,18 +395,24 @@ class ArtifactsService:
         description: Optional[str],
         user_id: str,
         source_ref: Optional[str] = None,
+        fmt: str = "csv",
     ) -> Artifact:
-        """Create a CSV artifact by executing a SQL query and streaming results to file."""
+        """Create an artifact by executing a SQL query and writing results to an export file."""
         if not user_id:
             raise ValueError("user_id is required (NEVER null)")
+        if settings.mode != "standalone":
+            raise PermissionError("Query file exports are only available in standalone mode")
 
         from app.services.sql_service import get_sql_service
 
-        filename = self._validate_filename(filename)
+        fmt = ArtifactFormat(fmt)
+        if fmt not in QUERY_EXPORT_FORMATS:
+            raise ValueError("Unsupported query export format")
+        export_dest = self._canonicalize_export_destination(filename, fmt.value)
+        filename = export_dest.name
         self._check_rate_limit(user_id)
         self._check_quota(user_id)
 
-        fmt = ArtifactFormat.CSV
         sql_svc = get_sql_service()
 
         # Validate SQL
@@ -354,23 +451,19 @@ class ArtifactsService:
 
                     result = conn.execute(query)
                     columns = [desc[0] for desc in result.description]
+                    records = []
+                    while True:
+                        batch = result.fetchmany(1000)
+                        if not batch:
+                            break
+                        records.extend(dict(zip(columns, row)) for row in batch)
 
-                    # Stream rows to CSV
-                    import csv
-                    with open(content_file, "w", encoding="utf-8", newline="") as f:
-                        writer = csv.writer(f)
-                        writer.writerow(columns)
-                        while True:
-                            batch = result.fetchmany(1000)
-                            if not batch:
-                                break
-                            for row in batch:
-                                writer.writerow(row)
-                            # Check size limit mid-stream
-                            if content_file.stat().st_size > MAX_ARTIFACT_SIZE_BYTES:
-                                raise ValueError(
-                                    f"Query result exceeds {MAX_ARTIFACT_SIZE_BYTES // (1024*1024)}MB limit"
-                                )
+                    self._write_export(records, fmt, export_dest)
+                    if export_dest.stat().st_size > MAX_ARTIFACT_SIZE_BYTES:
+                        raise ValueError(
+                            f"Query result exceeds {MAX_ARTIFACT_SIZE_BYTES // (1024*1024)}MB limit"
+                        )
+                    shutil.copyfile(export_dest, content_file)
                 finally:
                     conn.close()
 
