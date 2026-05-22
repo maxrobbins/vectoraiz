@@ -4,7 +4,7 @@ Pydantic Schemas for Listing Metadata Generation
 BQ-085: Transform vectorAIz processing results into marketplace-ready metadata.
 """
 from pydantic import BaseModel, Field
-from typing import List
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -26,6 +26,6 @@ class ListingMetadata(BaseModel):
     file_format: str = ""
     size_bytes: int = 0
     freshness_score: float = Field(0.0, description="0.0-1.0 based on file modification time")
-    privacy_score: float = Field(1.0, description="1.0 = no PII detected, 0.0 = high PII risk")
+    privacy_score: Optional[float] = Field(None, ge=0.0, le=10.0, description="0-10 scale, 10.0 = no PII detected, 0.0 = high PII risk; None = not scanned")
     data_categories: List[str] = Field(default_factory=list, description="Inferred data categories")
     generated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())

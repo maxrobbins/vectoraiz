@@ -13,10 +13,10 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+from app.models.listing_metadata_schemas import ListingMetadata, ColumnSummary
 from app.services.duckdb_service import ephemeral_duckdb_service
 
 logger = logging.getLogger(__name__)
-from app.models.listing_metadata_schemas import ListingMetadata, ColumnSummary
 
 
 # Semantic type -> category mappings
@@ -166,7 +166,7 @@ class ListingMetadataService:
             file_format=file_type,
             size_bytes=size_bytes,
             freshness_score=round(freshness_score, 4),
-            privacy_score=round(privacy_score, 4),
+            privacy_score=round(privacy_score, 4) if privacy_score is not None else None,
             data_categories=sorted(set(categories)),
             generated_at=datetime.now(timezone.utc).isoformat(),
         )
@@ -325,21 +325,23 @@ class ListingMetadataService:
         except (OSError, ValueError):
             return 0.5
 
-    def _compute_privacy_score(self, dataset_id: str) -> float:
+    def _compute_privacy_score(self, dataset_id: str) -> Optional[float]:
         """
-        Read PII scan results if they exist. 1.0 = no PII, 0.0 = high PII.
-        Falls back to 1.0 (assume clean) if no scan exists.
+        Read PII scan results if they exist. 10.0 = no PII, 0.0 = high PII.
+        Falls back to None if no scan score exists.
         """
         pii_path = Path(f"/data/processed/{dataset_id}/pii_scan.json")
         if not pii_path.exists():
-            return 1.0
+            return None
 
         try:
             with open(pii_path) as f:
                 pii_data = json.load(f)
-            return float(pii_data.get("privacy_score", 1.0))
+            if "privacy_score" not in pii_data:
+                return None  # 0-10 scale: missing field -> unscored signal, not "1.0 = critical risk"
+            return float(pii_data["privacy_score"])
         except (json.JSONDecodeError, ValueError, KeyError):
-            return 1.0
+            return None
 
 
 def get_listing_metadata_service() -> ListingMetadataService:

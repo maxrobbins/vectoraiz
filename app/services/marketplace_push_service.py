@@ -176,8 +176,8 @@ class MarketplacePushService:
             "size_bytes": listing_metadata.size_bytes,
         }
 
-        # Map privacy_score: vectoraiz uses 0.0-1.0, ai.market uses 0-10
-        privacy_score_10 = round(listing_metadata.privacy_score * 10, 1)
+        # Map privacy_score: canonical 0-10 scale throughout pipeline; null tolerated (publishes as 'not_scanned')
+        privacy_score_payload = listing_metadata.privacy_score if listing_metadata.privacy_score is not None else None
 
         # Map compliance status
         compliance_status = "not_checked"
@@ -212,7 +212,8 @@ class MarketplacePushService:
             "secondary_categories": secondary_categories,
             "tags": listing_metadata.tags[:20],
             "schema_info": schema_info,
-            "privacy_score": privacy_score_10,
+            "privacy_score": privacy_score_payload,
+            "privacy_scan_status": "scanned" if privacy_score_payload is not None else "not_scanned",
             "compliance_status": compliance_status,
             "compliance_details": compliance_details,
             "data_format": listing_metadata.file_format or "parquet",

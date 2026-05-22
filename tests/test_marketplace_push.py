@@ -34,7 +34,7 @@ SAMPLE_LISTING_METADATA = {
     "file_format": "csv",
     "size_bytes": 4500000,
     "freshness_score": 0.95,
-    "privacy_score": 0.9,
+    "privacy_score": 9.0,
     "data_categories": ["financial", "time-series"],
     "generated_at": "2026-02-11T00:00:00",
 }
@@ -112,7 +112,7 @@ class TestPayloadBuilding:
         assert payload["price"] == 50.0
         assert payload["model_provider"] == "local"
         assert payload["category"] == "financial"
-        assert payload["privacy_score"] == 9.0  # 0.9 * 10
+        assert payload["privacy_score"] == 9.0
         assert payload["compliance_status"] == "medium_risk"  # score 75
         assert payload["source_row_count"] == 50000
         assert "columns" in payload["schema_info"]

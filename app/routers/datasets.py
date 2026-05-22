@@ -24,6 +24,7 @@ from app.services.processing_service import (
     get_processing_service,
     ProcessingService,
     ProcessingStatus,
+    PROCESSABLE_TYPES,
 )
 from app.services.indexing_service import get_indexing_service, IndexingService
 from app.services.attestation_service import AttestationService, get_attestation_service
@@ -46,8 +47,6 @@ from app.services.serial_metering import metered, MeterDecision
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-from app.services.processing_service import PROCESSABLE_TYPES
 
 # Build dotted extension set from the canonical PROCESSABLE_TYPES
 SUPPORTED_EXTENSIONS = {f'.{t}' for t in PROCESSABLE_TYPES}
@@ -1038,7 +1037,7 @@ async def generate_listing_metadata(
     if not record:
         raise HTTPException(status_code=404, detail=f"Dataset '{dataset_id}' not found")
     
-    if record.status != ProcessingStatus.READY:
+    if record.status not in (ProcessingStatus.READY, ProcessingStatus.PREVIEW_READY):
         raise HTTPException(
             status_code=400,
             detail=f"Dataset not ready. Current status: {record.status.value}"
