@@ -160,7 +160,7 @@ class MarketplacePushService:
         """Map local processing results to ai.market ListingCreate schema."""
 
         # Build schema_info from column summaries (no actual data)
-        schema_info = {
+        schema_info: Dict[str, Any] = {
             "columns": [
                 {
                     "name": col.name,
@@ -203,7 +203,7 @@ class MarketplacePushService:
             if len(listing_metadata.data_categories) > 1:
                 secondary_categories = listing_metadata.data_categories[1:]
 
-        payload = {
+        payload: Dict[str, Any] = {
             "title": listing_metadata.title[:255],
             "description": listing_metadata.description[:10000],
             "price": max(price, 25.0),
