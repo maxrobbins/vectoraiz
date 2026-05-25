@@ -46,6 +46,8 @@ import { cn } from "@/lib/utils";
 import { useDatasets } from "@/hooks/useApi";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { ApiDataset } from "@/lib/api";
+import { useChannel } from "@/hooks/useChannel";
+import RawListingsPage from "@/pages/RawListingsPage";
 
 type SortField = "name" | "date" | "size" | "rows";
 type SortDirection = "asc" | "desc";
@@ -106,6 +108,12 @@ const convertApiDataset = (apiDataset: ApiDataset): Dataset => ({
 });
 
 const Datasets = () => {
+  const channel = useChannel();
+  // AIM Data channel: render the raw-listings page instead — no vectorization, any file type.
+  if (channel === "aim-data") {
+    return <RawListingsPage />;
+  }
+
   const brand = useBrand();
   const navigate = useNavigate();
   const { isPublished, getPublishedData } = useMarketplace();
