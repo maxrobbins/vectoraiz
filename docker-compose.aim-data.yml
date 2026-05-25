@@ -14,7 +14,7 @@
 
 services:
   vectoraiz:
-    image: ghcr.io/aidotmarket/vectoraiz:v${VECTORAIZ_VERSION:-1.20.41}
+    image: ghcr.io/aidotmarket/vectoraiz:${VECTORAIZ_VERSION:-v1.20.41}
     ports:
       - "${AIM_DATA_PORT:-8080}:80"
     volumes:
@@ -26,7 +26,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - VECTORAIZ_CHANNEL=aim-data
-      - VECTORAIZ_VERSION=${VECTORAIZ_VERSION:-1.20.41}
+      - VECTORAIZ_VERSION=${VECTORAIZ_VERSION:-v1.20.41}
       - VECTORAIZ_MODE=${VECTORAIZ_MODE:-standalone}
       - VECTORAIZ_SECRET_KEY=${VECTORAIZ_SECRET_KEY:-}
       - AIM_DATA_APIKEY_HMAC_SECRET=${AIM_DATA_APIKEY_HMAC_SECRET:-}
