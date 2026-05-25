@@ -106,7 +106,7 @@ const LoginPage = () => {
               <p className="text-sm text-center text-muted-foreground">
                 Don't have an account?{" "}
                 <a
-                  href="https://ai.market/signup"
+                  href="https://ai.market/register"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
