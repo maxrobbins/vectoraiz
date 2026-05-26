@@ -16,7 +16,7 @@ UPDATED:
 import logging
 import os
 from pydantic_settings import BaseSettings
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from typing import List, Optional, Literal
 from cryptography.fernet import Fernet
 import psutil
@@ -120,6 +120,11 @@ class Settings(BaseSettings):
     internal_api_key: Optional[str] = Field(
         default=None,
         validation_alias=AliasChoices("AIM_DATA_INTERNAL_API_KEY", "VECTORAIZ_INTERNAL_API_KEY"),
+    )
+    ai_market_aws_account_id: str = Field(
+        default="000000000000",
+        validation_alias=AliasChoices("AI_MARKET_AWS_ACCOUNT_ID", "AIM_DATA_AWS_ACCOUNT_ID", "VECTORAIZ_AI_MARKET_AWS_ACCOUNT_ID"),
+        description="12-digit AWS account ID allowed to assume seller S3 roles.",
     )
     
     # Encryption key for API keys at rest (BQ-066)
@@ -238,6 +243,13 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_prefix = "VECTORAIZ_"
+
+    @field_validator("ai_market_aws_account_id")
+    @classmethod
+    def _validate_ai_market_aws_account_id(cls, value: str) -> str:
+        if not value.isdigit() or len(value) != 12:
+            raise ValueError("AI_MARKET_AWS_ACCOUNT_ID must be a 12-digit string")
+        return value
 
     def model_post_init(self, __context) -> None:
         if not self.allowed_raw_file_dirs:

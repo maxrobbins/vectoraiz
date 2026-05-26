@@ -71,6 +71,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBrand } from "@/contexts/BrandContext";
 import { useMode } from "@/contexts/ModeContext";
 import ConnectivitySettings from "@/components/ConnectivitySettings";
+import DataSourceSettings from "@/components/DataSourceSettings";
 
 // Empty string = same-origin (relative URLs). Works on Railway, Docker, etc.
 const DEFAULT_API_URL = '';
@@ -844,6 +845,11 @@ docker compose -f docker-compose.customer.yml up -d ${brand.dockerComposeService
       {/* Section: External Connectivity */}
       <div id="connectivity">
         <ConnectivitySettings />
+      </div>
+
+      {/* Section: Data Sources */}
+      <div id="data-sources">
+        <DataSourceSettings />
       </div>
 
       {/* Section 4: Developer Mode */}

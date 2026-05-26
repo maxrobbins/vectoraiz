@@ -16,7 +16,7 @@ faulthandler.enable(file=sys.stderr, all_threads=True)
 from app.config import settings
 
 # BQ-127: Stock routers — always imported regardless of mode
-from app.routers import health, datasets, search, sql, vectors, pii, docs, diagnostics, imports
+from app.routers import health, datasets, search, sql, vectors, pii, docs, diagnostics, imports, s3_connections
 from app.routers import auth as auth_router_module
 from app.core.database import init_db, close_db
 from app.core.structured_logging import setup_logging
@@ -630,6 +630,11 @@ def create_app() -> FastAPI:
         prefix="/api/v1/db",
         tags=["database"],
         dependencies=admin_route_dependency,
+    )
+    app.include_router(
+        s3_connections.router,
+        prefix="/api/s3-connections",
+        tags=["s3-connections"],
     )
 
     # ADMIN + USER — Co-Pilot (REST + WebSocket)
