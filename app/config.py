@@ -16,7 +16,7 @@ UPDATED:
 import logging
 import os
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from typing import List, Optional, Literal
 from cryptography.fernet import Fernet
 import psutil
@@ -90,20 +90,37 @@ class Settings(BaseSettings):
     connected_fallback: Literal["standalone", "refuse"] = "standalone"
 
     # BQ-127: Local auth secrets (C1 — separate from SECRET_KEY)
-    apikey_hmac_secret: Optional[str] = None   # HMAC for local API key hashing
+    apikey_hmac_secret: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("VECTORAIZ_APIKEY_HMAC_SECRET", "AIM_DATA_APIKEY_HMAC_SECRET"),
+        description="HMAC for local API key hashing.",
+    )
     local_auth_secret: Optional[str] = None    # JWT signing key (Phase 2, not used yet)
 
     # BQ-127: Premium feature flags (only relevant in connected mode)
-    allai_enabled: bool = True
+    allai_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("VECTORAIZ_ALLAI_ENABLED", "AIM_DATA_ALLAI_ENABLED"),
+    )
     marketplace_enabled: bool = True
 
     # ai.market platform integration
-    ai_market_url: str = _DEFAULT_AI_MARKET_URL
-    auth_enabled: bool = True  # S100: Default ON. Set VECTORAIZ_AUTH_ENABLED=false only for local dev.
+    ai_market_url: str = Field(
+        default=_DEFAULT_AI_MARKET_URL,
+        validation_alias=AliasChoices("VECTORAIZ_AI_MARKET_URL", "AIM_DATA_AI_MARKET_URL"),
+    )
+    auth_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("VECTORAIZ_AUTH_ENABLED", "AIM_DATA_AUTH_ENABLED"),
+        description="S100: Default ON. Set VECTORAIZ_AUTH_ENABLED=false only for local dev.",
+    )
     auth_cache_ttl: int = 300 # 5 minutes in seconds
 
     # Service-to-service auth (for internal endpoints on ai-market-backend)
-    internal_api_key: Optional[str] = None
+    internal_api_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("VECTORAIZ_INTERNAL_API_KEY", "AIM_DATA_INTERNAL_API_KEY"),
+    )
     
     # Encryption key for API keys at rest (BQ-066)
     # If not set, auto-generates a Fernet key.
@@ -118,7 +135,11 @@ class Settings(BaseSettings):
     # BQ-102: Device identity keystore
     # Passphrase for encrypting private keys in the local keystore.
     # REQUIRED in production — startup will fail without it.
-    keystore_passphrase: Optional[str] = None  # SecretStr-equivalent via env var
+    keystore_passphrase: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("VECTORAIZ_KEYSTORE_PASSPHRASE", "AIM_DATA_KEYSTORE_PASSPHRASE"),
+        description="Passphrase for encrypting private keys in the local keystore. REQUIRED in production. SecretStr-equivalent via env var.",
+    )
     # Path to keystore file — defaults to persistent data volume for Docker.
     keystore_path: str = "/data/keystore.json"
 
@@ -160,7 +181,11 @@ class Settings(BaseSettings):
     public_url: str = "https://vectoraiz-backend-production.up.railway.app"
 
     # BQ-MCP-RAG: External LLM Connectivity (§4.5)
-    connectivity_enabled: bool = False          # Off by default — customer must opt in
+    connectivity_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("VECTORAIZ_CONNECTIVITY_ENABLED", "AIM_DATA_CONNECTIVITY_ENABLED"),
+        description="Off by default - customer must opt in.",
+    )
     connectivity_bind_host: str = "127.0.0.1"  # Loopback only by default
     connectivity_max_tokens: int = 10
     connectivity_rate_limit_rpm: int = 30       # Per-token requests/min
@@ -190,7 +215,11 @@ class Settings(BaseSettings):
     db_extract_max_rows: int = 5_000_000  # Max rows per extraction (M3)
 
     # BQ-VZ-SERIAL-CLIENT: Serial activation & metering
-    serial: Optional[str] = None  # Device serial number for X-Serial header
+    serial: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("VECTORAIZ_SERIAL", "AIM_DATA_SERIAL"),
+        description="Device serial number for X-Serial header.",
+    )
     aimarket_url: str = _DEFAULT_AI_MARKET_URL  # ai-market serial authority base URL
     app_version: str = os.environ.get("VECTORAIZ_VERSION", "dev")
     serial_data_dir: str = "/data"  # Directory for serial.json + pending_usage.jsonl
