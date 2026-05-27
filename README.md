@@ -187,6 +187,16 @@ vectorAIz can optionally connect to [ai.market](https://ai.market) to publish yo
 - **8 GB RAM** minimum (16 GB recommended for large datasets)
 - An API key from OpenAI, Anthropic, or Google (for LLM queries)
 
+
+
+## Post-split notice (2026-05-27)
+
+This repository previously hosted both vectorAIz and AIM Data as a single monorepo. As of 2026-05-27, AIM Data has been forked out to its own repository at [github.com/aidotmarket/aim-data](https://github.com/aidotmarket/aim-data).
+
+vectorAIz continues here. Shared core platform code (allAI, RAG, indexing, search, copilot, billing, attestation) is maintained upstream in this repo and synced to AIM Data weekly. Bug fixes to shared code should land here first.
+
+If you are looking for the data-seller / ai.market marketplace surface, you want the aim-data repo. If you are running vectorAIz as a customer-hosted private data tool, you are in the right place.
+
 ## License
 
 Source available under [Elastic License 2.0](LICENSE). Free to use, modify, and run internally. You may not offer vectorAIz as a managed service.
