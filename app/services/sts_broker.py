@@ -93,7 +93,9 @@ class STSBroker:
                     "aws_error_code": error_code,
                 },
             )
-            raise STSAssumeError(self._seller_actionable_message(error_code), error_code) from exc
+            # 'from None' prevents the raw botocore ClientError surfacing in tracebacks
+            # (MED, S728 security review): leak no AWS internals beyond the mapped error code.
+            raise STSAssumeError(self._seller_actionable_message(error_code), error_code) from None
 
         credentials = response["Credentials"]
         assumed = AssumedCredentials(
