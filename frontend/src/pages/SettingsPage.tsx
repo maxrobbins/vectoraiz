@@ -282,8 +282,9 @@ docker compose -f docker-compose.customer.yml up -d ${brand.dockerComposeService
 
   // Fetch local API keys on mount
   useEffect(() => {
+    if (isAimDataBrand) return;
     fetchLocalKeys();
-  }, [fetchLocalKeys]);
+  }, [fetchLocalKeys, isAimDataBrand]);
 
   // Fetch version info on mount
   useEffect(() => {
@@ -292,6 +293,7 @@ docker compose -f docker-compose.customer.yml up -d ${brand.dockerComposeService
 
   // Fetch system info for recommended concurrent uploads
   useEffect(() => {
+    if (isAimDataBrand) return;
     systemApi.info().then((info) => {
       const rec = info.system.recommended_concurrent_uploads;
       setRecommendedConcurrent(rec);
@@ -301,7 +303,7 @@ docker compose -f docker-compose.customer.yml up -d ${brand.dockerComposeService
     }).catch(() => {
       // Fallback: leave recommendation as null
     });
-  }, []);
+  }, [isAimDataBrand]);
 
   // Fetch PII settings on mount (BQ-VZ-DATA-READINESS)
   useEffect(() => {
@@ -434,306 +436,308 @@ docker compose -f docker-compose.customer.yml up -d ${brand.dockerComposeService
         </p>
       </div>
 
-      {/* Section: allAI Credits — moved to /billing */}
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-              <Coins className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-foreground">allAI Credits</CardTitle>
-              <CardDescription>AI-powered features for your data</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <a href="/billing" className="text-sm text-primary underline underline-offset-2 hover:text-primary/80">
-            Manage billing and credits &rarr;
-          </a>
-        </CardContent>
-      </Card>
-
       {!isAimDataBrand && (
-        <Card className="bg-card border-border">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-                <Server className="w-5 h-5 text-primary" />
+        <>
+          {/* Section: allAI Credits — moved to /billing */}
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Coins className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-foreground">allAI Credits</CardTitle>
+                  <CardDescription>AI-powered features for your data</CardDescription>
+                </div>
               </div>
-              <div>
-                <CardTitle className="text-foreground">Backend Connection</CardTitle>
-                <CardDescription>Configure the {brand.name} backend API URL</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <a href="/billing" className="text-sm text-primary underline underline-offset-2 hover:text-primary/80">
+                Manage billing and credits &rarr;
+              </a>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Server className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-foreground">Backend Connection</CardTitle>
+                  <CardDescription>Configure the {brand.name} backend API URL</CardDescription>
+                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="backend-url" className="text-foreground">Backend URL</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="backend-url"
-                  type="text"
-                  placeholder={`Same origin (${window.location.origin})`}
-                  value={apiUrl}
-                  onChange={(e) => {
-                    setApiUrl(e.target.value);
-                    setBackendTestStatus('idle');
-                    setIsDirty(true);
-                  }}
-                  className="flex-1 bg-background border-border text-foreground font-mono"
-                />
-                <Button
-                  variant="outline"
-                  onClick={testBackendConnection}
-                  disabled={backendTestStatus === 'testing'}
-                >
-                  {backendTestStatus === 'testing' ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    'Test'
-                  )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="backend-url" className="text-foreground">Backend URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="backend-url"
+                    type="text"
+                    placeholder={`Same origin (${window.location.origin})`}
+                    value={apiUrl}
+                    onChange={(e) => {
+                      setApiUrl(e.target.value);
+                      setBackendTestStatus('idle');
+                      setIsDirty(true);
+                    }}
+                    className="flex-1 bg-background border-border text-foreground font-mono"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={testBackendConnection}
+                    disabled={backendTestStatus === 'testing'}
+                  >
+                    {backendTestStatus === 'testing' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      'Test'
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Connection status */}
+              {backendTestStatus === 'success' && (
+                <div className="flex items-center gap-2 text-sm text-[hsl(var(--haven-success))]">
+                  <Wifi className="w-4 h-4" />
+                  Connected successfully
+                </div>
+              )}
+              {backendTestStatus === 'error' && (
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <WifiOff className="w-4 h-4" />
+                  {backendErrorMessage || 'Connection failed'}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={handleSaveBackendUrl}>
+                  Save
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleResetBackendUrl}>
+                  Reset to Default
                 </Button>
               </div>
-            </div>
 
-            {/* Connection status */}
-            {backendTestStatus === 'success' && (
-              <div className="flex items-center gap-2 text-sm text-[hsl(var(--haven-success))]">
-                <Wifi className="w-4 h-4" />
-                Connected successfully
+              <p className="text-xs text-muted-foreground">
+                Default: same origin (auto-detect). Leave empty when the frontend is served from the backend.
+                Only set a custom URL if the backend is on a different host.
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Section: Local API Keys Management */}
+          <Card className="bg-card border-border" id="api-keys">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <KeyRound className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-foreground">API Keys</CardTitle>
+                  <CardDescription>Manage your {brand.name} API keys for programmatic access</CardDescription>
+                </div>
               </div>
-            )}
-            {backendTestStatus === 'error' && (
-              <div className="flex items-center gap-2 text-sm text-destructive">
-                <WifiOff className="w-4 h-4" />
-                {backendErrorMessage || 'Connection failed'}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Create new key */}
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Key label (e.g. CI/CD)"
+                  value={newKeyLabel}
+                  onChange={(e) => setNewKeyLabel(e.target.value)}
+                  className="flex-1 bg-background border-border"
+                />
+                <Button onClick={createLocalKey} className="gap-2">
+                  <Plus className="w-4 h-4" />
+                  Create Key
+                </Button>
               </div>
-            )}
 
-            <div className="flex gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={handleSaveBackendUrl}>
-                Save
-              </Button>
-              <Button variant="ghost" size="sm" onClick={handleResetBackendUrl}>
-                Reset to Default
-              </Button>
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              Default: same origin (auto-detect). Leave empty when the frontend is served from the backend.
-              Only set a custom URL if the backend is on a different host.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Section: Local API Keys Management */}
-      <Card className="bg-card border-border" id="api-keys">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-              <KeyRound className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-foreground">API Keys</CardTitle>
-              <CardDescription>Manage your {brand.name} API keys for programmatic access</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Create new key */}
-          <div className="flex gap-2">
-            <Input
-              placeholder="Key label (e.g. CI/CD)"
-              value={newKeyLabel}
-              onChange={(e) => setNewKeyLabel(e.target.value)}
-              className="flex-1 bg-background border-border"
-            />
-            <Button onClick={createLocalKey} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Create Key
-            </Button>
-          </div>
-
-          {/* Key list */}
-          {keysLoading ? (
-            <div className="flex items-center justify-center py-6">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : localKeys.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No API keys found.</p>
-          ) : (
-            <div className="space-y-2">
-              {localKeys.filter(k => !k.revoked).map((key) => {
-                const isSystemKey = key.label === "Admin (setup)" || key.label?.startsWith("Login (");
-                return (
-                <div key={key.key_id} className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
-                  <div className="space-y-0.5 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">{key.label}</span>
-                      {isSystemKey && (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">System</span>
-                      )}
-                      <span className="text-xs font-mono text-muted-foreground">vz_{key.key_id}_****</span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Created {new Date(key.created_at).toLocaleDateString()}
-                      {key.last_used_at && ` \u00B7 Last used ${new Date(key.last_used_at).toLocaleDateString()}`}
-                    </div>
-                  </div>
-                  {isSystemKey ? (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button variant="ghost" size="sm" className="text-muted-foreground" disabled>
+              {/* Key list */}
+              {keysLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : localKeys.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">No API keys found.</p>
+              ) : (
+                <div className="space-y-2">
+                  {localKeys.filter(k => !k.revoked).map((key) => {
+                    const isSystemKey = key.label === "Admin (setup)" || key.label?.startsWith("Login (");
+                    return (
+                    <div key={key.key_id} className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                      <div className="space-y-0.5 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">{key.label}</span>
+                          {isSystemKey && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">System</span>
+                          )}
+                          <span className="text-xs font-mono text-muted-foreground">vz_{key.key_id}_****</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Created {new Date(key.created_at).toLocaleDateString()}
+                          {key.last_used_at && ` \u00B7 Last used ${new Date(key.last_used_at).toLocaleDateString()}`}
+                        </div>
+                      </div>
+                      {isSystemKey ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="sm" className="text-muted-foreground" disabled>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>System keys cannot be deleted</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
                             <Trash2 className="w-4 h-4" />
                           </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>System keys cannot be deleted</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  ) : (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Revoke API Key</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will permanently revoke the key <span className="font-mono">vz_{key.key_id}_****</span>.
-                          Any applications using this key will lose access immediately.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => revokeLocalKey(key.key_id)} className="bg-destructive hover:bg-destructive/90">
-                          Revoke Key
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                  )}
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Revoke API Key</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will permanently revoke the key <span className="font-mono">vz_{key.key_id}_****</span>.
+                              Any applications using this key will lose access immediately.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => revokeLocalKey(key.key_id)} className="bg-destructive hover:bg-destructive/90">
+                              Revoke Key
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                      )}
+                    </div>
+                    );
+                  })}
                 </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Logout button */}
-          <div className="pt-2 border-t border-border">
-            <Button variant="outline" className="gap-2" onClick={logout}>
-              <LogOut className="w-4 h-4" />
-              Sign Out
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Created key dialog — show the full key ONCE */}
-      <Dialog open={showCreatedKeyDialog} onOpenChange={setShowCreatedKeyDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>API Key Created</DialogTitle>
-            <DialogDescription>
-              Copy this key now. You won't be able to see it again.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 p-3 bg-secondary rounded-lg text-sm font-mono break-all text-foreground">
-              {createdKey}
-            </code>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => {
-                if (createdKey) {
-                  navigator.clipboard.writeText(createdKey);
-                  toast({ title: "Copied to clipboard" });
-                }
-              }}
-            >
-              <Copy className="w-4 h-4" />
-            </Button>
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setShowCreatedKeyDialog(false)}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Section 2: Processing Settings */}
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-              <Cpu className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle className="text-foreground">Processing</CardTitle>
-              <CardDescription>Configure data processing settings</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label className="text-foreground">Memory Limit</Label>
-              <span className="text-sm font-mono text-primary">{memoryLimit[0]} GB</span>
-            </div>
-            <Slider
-              value={memoryLimit}
-              onValueChange={(v) => { setMemoryLimit(v); setIsDirty(true); }}
-              min={4}
-              max={32}
-              step={2}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>4 GB</span>
-              <span>32 GB</span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Maximum memory for data processing. Higher values allow larger files.
-            </p>
-          </div>
-
-          <div className="space-y-2 pt-2 border-t border-border">
-            <Label className="text-foreground">Concurrent Uploads</Label>
-            <Select value={concurrentUploads} onValueChange={(v) => {
-              setConcurrentUploads(v);
-              setIsDirty(true);
-              if (v === 'auto') {
-                localStorage.removeItem('vectoraiz_concurrent_uploads');
-              } else {
-                localStorage.setItem('vectoraiz_concurrent_uploads', v);
-              }
-            }}>
-              <SelectTrigger className="bg-background border-border w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto{recommendedConcurrent ? ` (${recommendedConcurrent})` : ''}</SelectItem>
-                <SelectItem value="1">1</SelectItem>
-                <SelectItem value="2">2</SelectItem>
-                <SelectItem value="3">3</SelectItem>
-                <SelectItem value="4">4</SelectItem>
-                <SelectItem value="5">5</SelectItem>
-                <SelectItem value="6">6</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-sm text-muted-foreground">
-              Number of files uploaded simultaneously.
-              {systemCores !== null && systemMemGb !== null && (
-                <> Detected: {systemCores} cores, {systemMemGb} GB RAM.</>
               )}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+
+              {/* Logout button */}
+              <div className="pt-2 border-t border-border">
+                <Button variant="outline" className="gap-2" onClick={logout}>
+                  <LogOut className="w-4 h-4" />
+                  Sign Out
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Created key dialog — show the full key ONCE */}
+          <Dialog open={showCreatedKeyDialog} onOpenChange={setShowCreatedKeyDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>API Key Created</DialogTitle>
+                <DialogDescription>
+                  Copy this key now. You won't be able to see it again.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 p-3 bg-secondary rounded-lg text-sm font-mono break-all text-foreground">
+                  {createdKey}
+                </code>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    if (createdKey) {
+                      navigator.clipboard.writeText(createdKey);
+                      toast({ title: "Copied to clipboard" });
+                    }
+                  }}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => setShowCreatedKeyDialog(false)}>Done</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Section 2: Processing Settings */}
+          <Card className="bg-card border-border">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
+                  <Cpu className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-foreground">Processing</CardTitle>
+                  <CardDescription>Configure data processing settings</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-foreground">Memory Limit</Label>
+                  <span className="text-sm font-mono text-primary">{memoryLimit[0]} GB</span>
+                </div>
+                <Slider
+                  value={memoryLimit}
+                  onValueChange={(v) => { setMemoryLimit(v); setIsDirty(true); }}
+                  min={4}
+                  max={32}
+                  step={2}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>4 GB</span>
+                  <span>32 GB</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Maximum memory for data processing. Higher values allow larger files.
+                </p>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-border">
+                <Label className="text-foreground">Concurrent Uploads</Label>
+                <Select value={concurrentUploads} onValueChange={(v) => {
+                  setConcurrentUploads(v);
+                  setIsDirty(true);
+                  if (v === 'auto') {
+                    localStorage.removeItem('vectoraiz_concurrent_uploads');
+                  } else {
+                    localStorage.setItem('vectoraiz_concurrent_uploads', v);
+                  }
+                }}>
+                  <SelectTrigger className="bg-background border-border w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto{recommendedConcurrent ? ` (${recommendedConcurrent})` : ''}</SelectItem>
+                    <SelectItem value="1">1</SelectItem>
+                    <SelectItem value="2">2</SelectItem>
+                    <SelectItem value="3">3</SelectItem>
+                    <SelectItem value="4">4</SelectItem>
+                    <SelectItem value="5">5</SelectItem>
+                    <SelectItem value="6">6</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  Number of files uploaded simultaneously.
+                  {systemCores !== null && systemMemGb !== null && (
+                    <> Detected: {systemCores} cores, {systemMemGb} GB RAM.</>
+                  )}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* PII Detection Settings (BQ-VZ-DATA-READINESS) */}
       <Card className="bg-card border-border">
@@ -845,10 +849,14 @@ docker compose -f docker-compose.customer.yml up -d ${brand.dockerComposeService
         </CardContent>
       </Card>
 
-      {/* Section: External Connectivity */}
-      <div id="connectivity">
-        <ConnectivitySettings />
-      </div>
+      {!isAimDataBrand && (
+        <>
+          {/* Section: External Connectivity */}
+          <div id="connectivity">
+            <ConnectivitySettings />
+          </div>
+        </>
+      )}
 
       {/* Section: Data Sources */}
       <div id="data-sources">
@@ -978,8 +986,12 @@ client = QdrantClient(host="localhost", port=6333)`}
         </Card>
       )}
 
-      {/* Section: Shared Search Portal (BQ-VZ-SHARED-SEARCH) */}
-      <PortalSettingsSection />
+      {!isAimDataBrand && (
+        <>
+          {/* Section: Shared Search Portal (BQ-VZ-SHARED-SEARCH) */}
+          <PortalSettingsSection />
+        </>
+      )}
 
       {/* Section 6: Software Updates & About */}
       <Card className="bg-card border-border">

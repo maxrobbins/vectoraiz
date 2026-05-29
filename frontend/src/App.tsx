@@ -15,6 +15,7 @@ import MainLayout from "./components/layout/MainLayout";
 import ChatPanel from "./components/copilot/ChatPanel";
 import CoPilotFab from "./components/copilot/CoPilotFab";
 import { useChannel } from "./hooks/useChannel";
+import { getRuntimeBrandName } from "./lib/brandConfig";
 import Dashboard from "./pages/Dashboard";
 import Datasets from "./pages/Datasets";
 import DatasetDetail from "./pages/DatasetDetail";
@@ -99,6 +100,13 @@ const ChannelLanding = () => {
   return <Navigate to={target} replace />;
 };
 
+const ExcludeAimData = ({ children }: { children: React.ReactNode }) => {
+  if (getRuntimeBrandName() === "aim-data") {
+    return <Navigate to="/datasets" replace />;
+  }
+  return <>{children}</>;
+};
+
 const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
@@ -134,14 +142,14 @@ const App = () => (
                     <Route path="/datasets" element={<Datasets />} />
                     <Route path="/datasets/:id" element={<DatasetDetail />} />
                     <Route path="/raw-files/:id" element={<RawFileDetail />} />
-                    <Route path="/earnings" element={<EarningsPage />} />
+                    <Route path="/earnings" element={<ExcludeAimData><EarningsPage /></ExcludeAimData>} />
                     <Route path="/search" element={<SearchPage />} />
                     <Route path="/sql" element={<SqlQuery />} />
                     <Route path="/artifacts" element={<ArtifactsPage />} />
                     <Route path="/databases" element={<DatabasePage />} />
                     <Route path="/settings" element={<SettingsPage />} />
-                    <Route path="/billing" element={<BillingPage />} />
-                    <Route path="/data-types" element={<DataTypesPage />} />
+                    <Route path="/billing" element={<ExcludeAimData><BillingPage /></ExcludeAimData>} />
+                    <Route path="/data-types" element={<ExcludeAimData><DataTypesPage /></ExcludeAimData>} />
                     <Route path="/ai-market" element={<AiMarketPage />} />
                     <Route path="/data-requests" element={<DataRequestsPage />} />
                     <Route path="/data-requests/new" element={<CreateDataRequestPage />} />
