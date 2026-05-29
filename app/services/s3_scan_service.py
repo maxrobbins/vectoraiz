@@ -4,6 +4,7 @@ S3 scan service for STS-backed, no-copy listing registration.
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 import uuid
 from datetime import datetime, timezone
@@ -16,6 +17,8 @@ from app.models.s3_connection import S3Connection
 from app.models.s3_object_metadata import S3ObjectMetadata
 from app.models.s3_scan_job import S3ScanJob
 from app.services.sts_broker import STSAssumeError, STSBroker
+
+logger = logging.getLogger(__name__)
 
 
 def _boto3_client(service_name: str, **kwargs):
@@ -143,6 +146,27 @@ class S3ScanService:
                 failed_at = _now()
                 scan_job.status = "failed"
                 scan_job.error_message = str(exc)
+                scan_job.completed_at = failed_at
+                scan_job.updated_at = failed_at
+                session.add(scan_job)
+                session.commit()
+                session.refresh(scan_job)
+                session.expunge(scan_job)
+                return scan_job
+            except Exception as exc:  # any other failure must fail-closed, not stick "running"
+                logger.warning(
+                    "s3_scan_failed",
+                    extra={
+                        "connection_id": connection_id,
+                        "scan_job_id": scan_job.id,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                failed_at = _now()
+                scan_job.status = "failed"
+                scan_job.error_message = (
+                    "Scan failed. Verify the connection's bucket and role permissions, then retry."
+                )
                 scan_job.completed_at = failed_at
                 scan_job.updated_at = failed_at
                 session.add(scan_job)
