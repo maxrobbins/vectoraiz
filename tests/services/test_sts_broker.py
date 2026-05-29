@@ -93,6 +93,24 @@ def test_assume_role_success_returns_typed_credentials():
     stubber.assert_no_pending_responses()
 
 
+def test_assume_role_accepts_verified_connection_status():
+    connection = _connection(status="verified")
+    sts_client = _sts_client()
+    stubber = Stubber(sts_client)
+    expiration = datetime.now(timezone.utc) + timedelta(hours=1)
+    stubber.add_response(
+        "assume_role",
+        _assume_response(expiration),
+        _expected_params(connection, "aim-seller-123-scan"),
+    )
+    stubber.activate()
+
+    credentials = STSBroker(sts_client).assume_role(connection, "scan")
+
+    assert credentials.access_key_id == "ASIAIOSFODNN7EXAMPLE"
+    stubber.assert_no_pending_responses()
+
+
 def test_assume_role_uses_cache_without_second_sts_call():
     connection = _connection()
     sts_client = _sts_client()

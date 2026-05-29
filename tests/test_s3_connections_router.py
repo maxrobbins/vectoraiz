@@ -17,6 +17,7 @@ from app.models.s3_connection import S3Connection
 from app.models.s3_object_metadata import S3ObjectMetadata  # noqa: F401
 from app.models.s3_scan_job import S3ScanJob  # noqa: F401
 from app.routers import s3_connections
+from app.services import s3_scan_service
 
 
 @pytest.fixture
@@ -45,6 +46,7 @@ def client(s3_engine, monkeypatch):
             yield session
 
     monkeypatch.setattr(s3_connections, "get_session_context", _session_context)
+    monkeypatch.setattr(s3_scan_service, "get_session_context", _session_context)
     monkeypatch.setattr(s3_connections.settings, "ai_market_aws_account_id", "123456789012")
     return TestClient(app)
 

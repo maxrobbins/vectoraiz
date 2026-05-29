@@ -54,7 +54,7 @@ class STSBroker:
         self._sts_client = sts_client
 
     def assume_role(self, connection: S3Connection, purpose: str) -> AssumedCredentials:
-        if connection.status != "configured" or connection.role_arn is None or connection.external_id is None:
+        if connection.status not in {"configured", "verified"} or connection.role_arn is None or connection.external_id is None:
             raise STSConnectionNotReady(
                 "S3 connection is not configured. Complete role ARN and ExternalId setup before retrying."
             )

@@ -5,6 +5,7 @@ S3 Connection Router
 Customer-facing S3 STS connection setup and verification endpoints.
 """
 
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -16,7 +17,11 @@ from sqlmodel import select
 
 from app.config import settings
 from app.core.database import get_session_context
+from app.models.dataset import DatasetRecord
 from app.models.s3_connection import S3Connection
+from app.models.s3_object_metadata import S3ObjectMetadata
+from app.models.s3_scan_job import S3ScanJob
+from app.services.s3_scan_service import S3ScanService
 
 router = APIRouter()
 
@@ -59,6 +64,62 @@ class S3VerifyResponse(BaseModel):
 
 class S3ConfigResponse(BaseModel):
     aws_account_id: str
+
+
+class S3ScanJobResponse(BaseModel):
+    id: str
+    connection_id: str
+    status: str
+    started_at: str
+    completed_at: Optional[str] = None
+    continuation_token: Optional[str] = None
+    error_message: Optional[str] = None
+    objects_enumerated: int
+    created_at: str
+    updated_at: str
+
+
+class S3ObjectMetadataResponse(BaseModel):
+    id: str
+    connection_id: str
+    scan_job_id: str
+    object_key: str
+    size_bytes: int
+    content_type: str
+    last_modified: str
+    etag: str
+    dataset_id: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class S3ObjectsResponse(BaseModel):
+    items: List[S3ObjectMetadataResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class S3ObjectRegisterRequest(BaseModel):
+    dataset_id: Optional[str] = None
+    listing_id: Optional[str] = None
+
+
+class S3DatasetResponse(BaseModel):
+    id: str
+    original_filename: str
+    storage_filename: str
+    file_type: str
+    file_size_bytes: int
+    status: str
+    listing_id: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class S3ObjectRegisterResponse(BaseModel):
+    dataset: S3DatasetResponse
+    object: S3ObjectMetadataResponse
 
 
 def _policy_prefix(prefix: Optional[str]) -> str:
@@ -133,6 +194,71 @@ def _to_response(connection: S3Connection, include_policies: bool = False) -> S3
         response.trust_policy = _trust_policy(connection)
         response.permission_policy = _permission_policy(connection)
     return response
+
+
+def _scan_job_response(scan_job: S3ScanJob) -> S3ScanJobResponse:
+    return S3ScanJobResponse(
+        id=scan_job.id,
+        connection_id=scan_job.connection_id,
+        status=scan_job.status,
+        started_at=scan_job.started_at.isoformat(),
+        completed_at=scan_job.completed_at.isoformat() if scan_job.completed_at else None,
+        continuation_token=scan_job.continuation_token,
+        error_message=scan_job.error_message,
+        objects_enumerated=scan_job.objects_enumerated,
+        created_at=scan_job.created_at.isoformat(),
+        updated_at=scan_job.updated_at.isoformat(),
+    )
+
+
+def _object_response(metadata: S3ObjectMetadata) -> S3ObjectMetadataResponse:
+    return S3ObjectMetadataResponse(
+        id=metadata.id,
+        connection_id=metadata.connection_id,
+        scan_job_id=metadata.scan_job_id,
+        object_key=metadata.object_key,
+        size_bytes=metadata.size_bytes,
+        content_type=metadata.content_type,
+        last_modified=metadata.last_modified.isoformat(),
+        etag=metadata.etag,
+        dataset_id=metadata.dataset_id,
+        created_at=metadata.created_at.isoformat(),
+        updated_at=metadata.updated_at.isoformat(),
+    )
+
+
+def _dataset_response(dataset: DatasetRecord) -> S3DatasetResponse:
+    return S3DatasetResponse(
+        id=dataset.id,
+        original_filename=dataset.original_filename,
+        storage_filename=dataset.storage_filename,
+        file_type=dataset.file_type,
+        file_size_bytes=dataset.file_size_bytes,
+        status=dataset.status,
+        listing_id=dataset.listing_id,
+        created_at=dataset.created_at.isoformat(),
+        updated_at=dataset.updated_at.isoformat(),
+    )
+
+
+def _dataset_file_type(object_key: str) -> str:
+    extension = os.path.splitext(object_key)[1].lstrip(".").lower()
+    return extension or "unknown"
+
+
+def _create_dataset_for_object(metadata: S3ObjectMetadata, body: S3ObjectRegisterRequest) -> DatasetRecord:
+    now = datetime.now(timezone.utc)
+    return DatasetRecord(
+        id=body.dataset_id or str(uuid.uuid4()),
+        original_filename=os.path.basename(metadata.object_key) or metadata.object_key,
+        storage_filename=metadata.object_key,
+        file_type=_dataset_file_type(metadata.object_key),
+        file_size_bytes=metadata.size_bytes,
+        status="s3_linked",
+        listing_id=body.listing_id,
+        created_at=now,
+        updated_at=now,
+    )
 
 
 def _boto3_client(service_name: str, **kwargs):
@@ -245,6 +371,109 @@ async def verify_connection(connection_id: str) -> S3VerifyResponse:
         session.add(connection)
         session.commit()
         return S3VerifyResponse(status=connection.status, verified_at=verified_at.isoformat())
+
+
+@router.post("/{connection_id}/scan", summary="Scan S3 connection objects")
+async def scan_connection(connection_id: str) -> S3ScanJobResponse:
+    try:
+        scan_job = S3ScanService().scan_connection(connection_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="S3 connection not found") from None
+    return _scan_job_response(scan_job)
+
+
+@router.get("/{connection_id}/scan/{scan_job_id}", summary="Get S3 scan job")
+async def get_scan_job(connection_id: str, scan_job_id: str) -> S3ScanJobResponse:
+    with get_session_context() as session:
+        scan_job = session.get(S3ScanJob, scan_job_id)
+        if scan_job is None or scan_job.connection_id != connection_id:
+            raise HTTPException(status_code=404, detail="S3 scan job not found")
+        return _scan_job_response(scan_job)
+
+
+@router.get("/{connection_id}/objects", summary="List scanned S3 objects")
+async def list_objects(
+    connection_id: str,
+    limit: int = 100,
+    offset: int = 0,
+    dataset_linked: Optional[bool] = None,
+) -> S3ObjectsResponse:
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be non-negative")
+
+    with get_session_context() as session:
+        connection = session.get(S3Connection, connection_id)
+        if not connection:
+            raise HTTPException(status_code=404, detail="S3 connection not found")
+
+        stmt = select(S3ObjectMetadata).where(S3ObjectMetadata.connection_id == connection_id)
+        if dataset_linked is True:
+            stmt = stmt.where(S3ObjectMetadata.dataset_id.is_not(None))
+        elif dataset_linked is False:
+            stmt = stmt.where(S3ObjectMetadata.dataset_id.is_(None))
+
+        rows = session.exec(stmt.order_by(S3ObjectMetadata.object_key)).all()
+        page = rows[offset : offset + limit]
+        return S3ObjectsResponse(
+            items=[_object_response(row) for row in page],
+            limit=limit,
+            offset=offset,
+            total=len(rows),
+        )
+
+
+@router.post("/{connection_id}/objects/{object_id}/register", summary="Register scanned S3 object as dataset")
+async def register_object(
+    connection_id: str,
+    object_id: str,
+    body: S3ObjectRegisterRequest,
+) -> S3ObjectRegisterResponse:
+    with get_session_context() as session:
+        metadata = session.get(S3ObjectMetadata, object_id)
+        if metadata is None or metadata.connection_id != connection_id:
+            raise HTTPException(status_code=404, detail="S3 object metadata not found")
+
+        dataset: Optional[DatasetRecord] = None
+        if body.dataset_id:
+            dataset = session.get(DatasetRecord, body.dataset_id)
+        elif body.listing_id:
+            dataset = session.exec(select(DatasetRecord).where(DatasetRecord.listing_id == body.listing_id)).first()
+
+        if dataset is not None:
+            # Ownership guard (S729 security review): an existing dataset may only be
+            # linked if THIS connection already owns it (has an object linked to it).
+            # Prevents one connection attaching its object to another seller's dataset.
+            owned = session.exec(
+                select(S3ObjectMetadata)
+                .where(S3ObjectMetadata.dataset_id == dataset.id)
+                .where(S3ObjectMetadata.connection_id == connection_id)
+            ).first()
+            if owned is None:
+                raise HTTPException(status_code=403, detail="Dataset is not owned by this connection")
+
+        if dataset is None:
+            dataset = _create_dataset_for_object(metadata, body)
+        else:
+            dataset.updated_at = datetime.now(timezone.utc)
+            if body.listing_id and not dataset.listing_id:
+                dataset.listing_id = body.listing_id
+
+        session.add(dataset)
+        session.flush()
+
+        metadata.dataset_id = dataset.id
+        metadata.updated_at = datetime.now(timezone.utc)
+        session.add(metadata)
+        session.commit()
+        session.refresh(dataset)
+        session.refresh(metadata)
+
+        return S3ObjectRegisterResponse(
+            dataset=_dataset_response(dataset),
+            object=_object_response(metadata),
+        )
 
 
 @router.delete("/{connection_id}", status_code=204, summary="Delete S3 connection")
