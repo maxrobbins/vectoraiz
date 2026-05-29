@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 220" role="img">
+  <title>ai.market</title>
+  <desc>ai.market wordmark with Latin tagline "In datis veritas", set in Material Indigo to match the site brand color.</desc>
+  <text x="340" y="118" text-anchor="middle"
+        font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="800" font-size="96" letter-spacing="-3" fill="#3F51B5">ai.market</text>
+  <text x="340" y="172" text-anchor="middle"
+        font-family="'Cinzel', 'Trajan Pro', 'Trajan', 'Optima', 'Charlemagne Std', 'IM FELL English SC', serif"
+        font-weight="500" font-size="26" letter-spacing="7" fill="#3F51B5">In datis veritas</text>
+</svg>

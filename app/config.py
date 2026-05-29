@@ -241,6 +241,7 @@ class Settings(BaseSettings):
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000", "http://localhost:8080", "https://vectoraiz-frontend-production.up.railway.app", "https://dev.vectoraiz.com", "https://vectoraiz.com", "https://www.vectoraiz.com", "https://vectoraiz-website-production.up.railway.app"]
     
     class Config:
+        env_ignore_empty = True  # S725: empty env (e.g. blank AIM_DATA_AI_MARKET_URL) must not shadow AliasChoices fallback
         env_file = ".env"
         env_prefix = "VECTORAIZ_"
 
