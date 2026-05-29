@@ -41,6 +41,9 @@ from app.models.raw_file import RawFile  # noqa: F401  BQ-VZ-RAW-LISTINGS
 from app.models.raw_listing import RawListing  # noqa: F401  BQ-VZ-RAW-LISTINGS
 from app.models.notification import Notification  # noqa: F401  BQ-VZ-NOTIFICATIONS
 from app.models.cached_requests import CachedRequest, ResponseDraft  # noqa: F401  BQ-VZ-REQUEST-ENGINE
+from app.models.s3_connection import S3Connection  # noqa: F401
+from app.models.s3_object_metadata import S3ObjectMetadata  # noqa: F401
+from app.models.s3_scan_job import S3ScanJob  # noqa: F401
 
 SQLModel.metadata.create_all(get_engine())
 

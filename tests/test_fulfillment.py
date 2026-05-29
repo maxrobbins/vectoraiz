@@ -17,7 +17,7 @@ import base64
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -27,10 +27,14 @@ from sqlmodel import select
 from app.core.database import get_session_context
 from app.models.dataset import DatasetRecord
 from app.models.fulfillment import FulfillmentLog
+from app.models.s3_connection import S3Connection
+from app.models.s3_object_metadata import S3ObjectMetadata
+from app.models.s3_scan_job import S3ScanJob
 from app.services.fulfillment_service import (
     CHUNK_SIZE,
     FulfillmentService,
 )
+from app.services.sts_broker import AssumedCredentials, STSConnectionNotReady
 from app.services.trust_channel_client import TrustChannelClient
 
 
@@ -110,6 +114,61 @@ def _make_deliver_message(listing_id: str = "listing-abc-123") -> dict:
             "request_id": str(uuid.uuid4()),
         },
     }
+
+
+def _assumed_credentials() -> AssumedCredentials:
+    return AssumedCredentials(
+        access_key_id="ASIAIOSFODNN7EXAMPLE",
+        secret_access_key="secret-access-key",
+        session_token="session-token",
+        expiration=datetime.now(timezone.utc) + timedelta(hours=1),
+        region="us-east-1",
+    )
+
+
+def _create_s3_backed_dataset(
+    listing_id: str,
+    *,
+    dataset_id: str,
+    status: str = "configured",
+) -> tuple[S3Connection, S3ObjectMetadata]:
+    dataset = DatasetRecord(
+        id=dataset_id,
+        original_filename="object.csv",
+        storage_filename=f"{dataset_id}.csv",
+        file_type="csv",
+        file_size_bytes=0,
+        status="ready",
+        listing_id=listing_id,
+    )
+    connection = S3Connection(
+        id=f"conn-{dataset_id}",
+        name="Seller bucket",
+        bucket="seller-bucket",
+        region="us-east-1",
+        role_arn="arn:aws:iam::210987654321:role/aim-data" if status == "configured" else None,
+        external_id=str(uuid.uuid4()) if status == "configured" else None,
+        status=status,
+    )
+    scan_job = S3ScanJob(id=f"scan-{dataset_id}", connection_id=connection.id)
+    metadata = S3ObjectMetadata(
+        id=f"obj-{dataset_id}",
+        connection_id=connection.id,
+        scan_job_id=scan_job.id,
+        object_key="exports/object.csv",
+        size_bytes=12345,
+        content_type="text/csv",
+        last_modified=datetime.now(timezone.utc),
+        etag='"abc123"',
+        dataset_id=dataset.id,
+    )
+    with get_session_context() as session:
+        session.merge(dataset)
+        session.merge(connection)
+        session.merge(scan_job)
+        session.merge(metadata)
+        session.commit()
+    return connection, metadata
 
 
 # ===========================================================================
@@ -566,6 +625,111 @@ class TestFulfillmentLog:
 
 
 # ===========================================================================
+# S3 presigned-URL fulfillment
+# ===========================================================================
+
+class TestS3PresignedUrlFulfillment:
+    """S3-backed datasets are delivered by presigned URL, not chunk streaming."""
+
+    @pytest.mark.asyncio
+    async def test_s3_branch_sends_url_then_complete_and_does_not_stream(
+        self, service, mock_client
+    ):
+        listing_id = "listing-s3-url"
+        _create_s3_backed_dataset(listing_id, dataset_id="s3-url")
+        message = _make_deliver_message(listing_id)
+
+        with patch("app.services.fulfillment_service.STSBroker") as mock_broker_cls, \
+             patch("app.services.fulfillment_service.generate_presigned_get", return_value="https://seller-bucket.s3.amazonaws.com/exports/object.csv?sig=redacted"), \
+             patch.object(service, "_stream_chunks", new_callable=AsyncMock) as mock_stream:
+            mock_broker = mock_broker_cls.return_value
+            mock_broker.assume_role.return_value = _assumed_credentials()
+
+            await service._handle_deliver(message)
+
+        calls = mock_client.send_action.call_args_list
+        actions = [c[0][0]["action"] for c in calls]
+        assert actions == ["vai.fulfillment.url", "vai.fulfillment.complete"]
+        mock_stream.assert_not_called()
+
+        url_msg = calls[0][0][0]
+        transfer_id = url_msg["transfer_id"]
+        assert url_msg["parameters"] == {
+            "url": "https://seller-bucket.s3.amazonaws.com/exports/object.csv?sig=redacted",
+            "expires_in": 900,
+            "object_key": "exports/object.csv",
+            "content_type": "text/csv",
+            "size_bytes": 12345,
+            "transfer_id": transfer_id,
+            "order_id": message["parameters"]["order_id"],
+            "listing_id": listing_id,
+            "etag": '"abc123"',
+        }
+        complete_msg = calls[1][0][0]
+        assert complete_msg["parameters"]["status"] == "fulfilled"
+        assert complete_msg["parameters"]["delivery_mode"] == "presigned_url"
+        mock_broker.assume_role.assert_called_once()
+        assert mock_broker.assume_role.call_args.kwargs["purpose"] == transfer_id
+
+        with get_session_context() as session:
+            log = session.exec(
+                select(FulfillmentLog).where(FulfillmentLog.order_id == message["parameters"]["order_id"])
+            ).first()
+            assert log is not None
+            assert log.status == "completed"
+            assert log.file_size_bytes == 12345
+
+    @pytest.mark.asyncio
+    async def test_local_file_path_still_used_when_dataset_not_s3_backed(
+        self, service, mock_client, sample_dataset, sample_file, tmp_data_dir
+    ):
+        message = _make_deliver_message("listing-abc-123")
+
+        with patch("app.services.fulfillment_service.settings") as mock_settings, \
+             patch("app.services.fulfillment_service.STSBroker") as mock_broker_cls:
+            mock_settings.upload_directory = str(tmp_data_dir / "uploads")
+            mock_settings.processed_directory = str(tmp_data_dir / "processed")
+
+            await service._handle_deliver(message)
+
+        actions = [c[0][0]["action"] for c in mock_client.send_action.call_args_list]
+        assert actions[0] == "vai.fulfillment.metadata"
+        assert "vai.fulfillment.chunk" in actions
+        assert actions[-1] == "vai.fulfillment.complete"
+        assert "vai.fulfillment.url" not in actions
+        mock_broker_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_s3_connection_not_ready_sends_error_and_marks_log_failed(
+        self, service, mock_client
+    ):
+        listing_id = "listing-s3-not-ready"
+        _create_s3_backed_dataset(listing_id, dataset_id="s3-not-ready", status="onboarding")
+        message = _make_deliver_message(listing_id)
+
+        with patch("app.services.fulfillment_service.STSBroker") as mock_broker_cls, \
+             patch.object(service, "_stream_chunks", new_callable=AsyncMock) as mock_stream:
+            mock_broker_cls.return_value.assume_role.side_effect = STSConnectionNotReady("not ready")
+
+            await service._handle_deliver(message)
+
+        calls = mock_client.send_action.call_args_list
+        assert len(calls) == 1
+        error_msg = calls[0][0][0]
+        assert error_msg["action"] == "vai.fulfillment.error"
+        assert error_msg["parameters"]["error_code"] == "S3_CONNECTION_NOT_READY"
+        mock_stream.assert_not_called()
+
+        with get_session_context() as session:
+            log = session.exec(
+                select(FulfillmentLog).where(FulfillmentLog.order_id == message["parameters"]["order_id"])
+            ).first()
+            assert log is not None
+            assert log.status == "failed"
+            assert log.error_code == "S3_CONNECTION_NOT_READY"
+
+
+# ===========================================================================
 # Additional edge case tests
 # ===========================================================================
 
@@ -940,6 +1104,9 @@ class TestQueueRaceRegression:
 
             # Wait for both to be processed
             await asyncio.wait_for(svc._queue.join(), timeout=10.0)
+            svc._worker_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await svc._worker_task
 
         # Both should have completed — look for 2 complete messages
         calls = mock_client.send_action.call_args_list

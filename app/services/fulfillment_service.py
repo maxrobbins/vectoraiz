@@ -32,6 +32,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlmodel import select
 
@@ -39,6 +40,10 @@ from app.config import settings
 from app.core.database import get_session_context
 from app.models.dataset import DatasetRecord
 from app.models.fulfillment import FulfillmentLog
+from app.models.s3_connection import S3Connection
+from app.models.s3_object_metadata import S3ObjectMetadata
+from app.services.s3_presign import generate_presigned_get
+from app.services.sts_broker import STSAssumeError, STSBroker, STSConnectionNotReady
 from app.services.trust_channel_client import TrustChannelClient, get_trust_channel_client
 
 logger = logging.getLogger(__name__)
@@ -48,6 +53,7 @@ CHUNK_SIZE = 65536  # 64KB
 WINDOW_SIZE = 4  # 4 chunks per ACK window (256KB)
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
 ACK_TIMEOUT_S = 30.0
+PRESIGNED_URL_EXPIRES_IN = 900
 
 
 class FulfillmentService:
@@ -129,6 +135,18 @@ class FulfillmentService:
                 )
                 self._update_log(log_entry, "failed", error_code="DATASET_NOT_FOUND",
                                  error_message=f"No dataset for listing_id={listing_id}")
+                return
+
+            s3_object = self._find_s3_object(dataset)
+            if s3_object is not None:
+                await self._deliver_s3_object(
+                    log_entry=log_entry,
+                    connection=s3_object[0],
+                    metadata=s3_object[1],
+                    transfer_id=transfer_id,
+                    order_id=order_id,
+                    listing_id=listing_id,
+                )
                 return
 
             # 2. Validate file exists and is accessible
@@ -234,6 +252,111 @@ class FulfillmentService:
                 pass
             self._update_log(log_entry, "failed", error_code="TRANSFER_ABORTED",
                              error_message=str(e))
+
+    async def _deliver_s3_object(
+        self,
+        log_entry: FulfillmentLog,
+        connection: S3Connection,
+        metadata: S3ObjectMetadata,
+        transfer_id: str,
+        order_id: str,
+        listing_id: str,
+    ) -> None:
+        """Deliver an S3-backed dataset via a short-lived presigned GET URL."""
+        log_entry.status = "uploading"
+        log_entry.file_size_bytes = metadata.size_bytes
+        self._save_log(log_entry)
+
+        purpose = transfer_id or f"order-{order_id}"
+        try:
+            creds = STSBroker().assume_role(connection, purpose=purpose)
+        except STSConnectionNotReady:
+            await self._send_error(
+                transfer_id,
+                order_id,
+                "S3_CONNECTION_NOT_READY",
+                "S3 connection is not ready for delivery",
+            )
+            self._update_log(
+                log_entry,
+                "failed",
+                error_code="S3_CONNECTION_NOT_READY",
+                error_message=f"S3 connection not ready: connection_id={connection.id}",
+            )
+            return
+        except STSAssumeError as e:
+            await self._send_error(
+                transfer_id,
+                order_id,
+                "S3_ASSUME_FAILED",
+                "Unable to prepare S3 delivery",
+            )
+            self._update_log(
+                log_entry,
+                "failed",
+                error_code="S3_ASSUME_FAILED",
+                error_message=f"AWS error code: {e.aws_error_code or 'unknown'}",
+            )
+            return
+
+        try:
+            url = generate_presigned_get(
+                creds,
+                connection.bucket,
+                metadata.object_key,
+                expires_in=PRESIGNED_URL_EXPIRES_IN,
+            )
+        except Exception as e:
+            await self._send_error(
+                transfer_id,
+                order_id,
+                "S3_PRESIGN_FAILED",
+                "Unable to prepare S3 delivery",
+            )
+            self._update_log(
+                log_entry,
+                "failed",
+                error_code="S3_PRESIGN_FAILED",
+                error_message=self._redact_url_query(str(e)),
+            )
+            return
+
+        url_params = {
+            "url": url,
+            "expires_in": PRESIGNED_URL_EXPIRES_IN,
+            "object_key": metadata.object_key,
+            "content_type": metadata.content_type,
+            "size_bytes": metadata.size_bytes,
+            "transfer_id": transfer_id,
+            "order_id": order_id,
+            "listing_id": listing_id,
+        }
+        if metadata.etag:
+            url_params["etag"] = metadata.etag
+
+        await self._client.send_action({
+            "action": "vai.fulfillment.url",
+            "transfer_id": transfer_id,
+            "order_id": order_id,
+            "listing_id": listing_id,
+            "parameters": url_params,
+        })
+
+        await self._client.send_action({
+            "action": "vai.fulfillment.complete",
+            "transfer_id": transfer_id,
+            "order_id": order_id,
+            "parameters": {
+                "status": "fulfilled",
+                "delivery_mode": "presigned_url",
+            },
+        })
+
+        self._update_log(log_entry, "completed")
+        logger.info(
+            "S3 fulfillment complete: transfer_id=%s, bytes=%d",
+            transfer_id, metadata.size_bytes,
+        )
 
     async def _stream_chunks(
         self,
@@ -395,6 +518,26 @@ class FulfillmentService:
 
         return None, None
 
+    def _find_s3_object(
+        self, dataset: DatasetRecord
+    ) -> Optional[tuple[S3Connection, S3ObjectMetadata]]:
+        """
+        Resolve S3 metadata linked to a dataset, if this dataset is S3-backed.
+        """
+        with get_session_context() as session:
+            stmt = (
+                select(S3Connection, S3ObjectMetadata)
+                .where(S3ObjectMetadata.dataset_id == dataset.id)
+                .where(S3Connection.id == S3ObjectMetadata.connection_id)
+            )
+            result = session.exec(stmt).first()
+            if result is None:
+                return None
+            connection, metadata = result
+            session.expunge(connection)
+            session.expunge(metadata)
+            return connection, metadata
+
     def _resolve_file_path(self, dataset: DatasetRecord) -> Optional[str]:
         """
         Resolve the actual file path for a dataset.
@@ -438,6 +581,22 @@ class FulfillmentService:
         with get_session_context() as session:
             session.merge(entry)
             session.commit()
+
+    @staticmethod
+    def _redact_url_query(message: str) -> str:
+        """Remove query strings from URLs before persisting error text."""
+        parts = message.split()
+        redacted = []
+        for part in parts:
+            if "://" not in part:
+                redacted.append(part)
+                continue
+            try:
+                parsed = urlsplit(part)
+                redacted.append(urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", parsed.fragment)))
+            except ValueError:
+                redacted.append("[redacted-url]")
+        return " ".join(redacted)
 
     @staticmethod
     def _update_log(
