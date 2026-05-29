@@ -70,15 +70,32 @@ async def list_datasets(
         )
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Database query timed out")
+    except Exception as e:
+        # First-run / empty / uninitialized data store must not 500 the client
+        # into the "Showing local data" standalone fallback. Degrade to an empty
+        # list and log for diagnosis instead.
+        logger.warning("list_datasets failed; returning empty set: %s", e, exc_info=True)
+        records = []
+
+    datasets = []
+    for r in records:
+        try:
+            datasets.append(r.to_dict() if hasattr(r, "to_dict") else dict(r))
+        except Exception as e:  # one malformed record must not sink the whole list
+            logger.warning("skipping un-serializable dataset record: %s", e)
 
     response = {
-        "datasets": [r.to_dict() for r in records],
-        "count": len(records),
+        "datasets": datasets,
+        "count": len(datasets),
     }
 
     if facets:
-        from app.services.facet_service import get_facets
-        response["facets"] = get_facets()
+        try:
+            from app.services.facet_service import get_facets
+            response["facets"] = get_facets()
+        except Exception as e:
+            logger.warning("facet computation failed; omitting facets: %s", e)
+            response["facets"] = {}
 
     return response
 
