@@ -441,6 +441,18 @@ async def register_object(
         elif body.listing_id:
             dataset = session.exec(select(DatasetRecord).where(DatasetRecord.listing_id == body.listing_id)).first()
 
+        if dataset is not None:
+            # Ownership guard (S729 security review): an existing dataset may only be
+            # linked if THIS connection already owns it (has an object linked to it).
+            # Prevents one connection attaching its object to another seller's dataset.
+            owned = session.exec(
+                select(S3ObjectMetadata)
+                .where(S3ObjectMetadata.dataset_id == dataset.id)
+                .where(S3ObjectMetadata.connection_id == connection_id)
+            ).first()
+            if owned is None:
+                raise HTTPException(status_code=403, detail="Dataset is not owned by this connection")
+
         if dataset is None:
             dataset = _create_dataset_for_object(metadata, body)
         else:

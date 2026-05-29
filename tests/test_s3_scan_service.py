@@ -348,3 +348,40 @@ def test_fulfillment_resolves_registered_s3_dataset(session_context):
     found_connection, found_metadata = s3_object
     assert found_connection.id == connection.id
     assert found_metadata.id == metadata_id
+
+
+def test_register_rejects_unowned_existing_dataset(client, session_context):
+    """A connection cannot attach its object to a dataset it does not own (S729 sec review)."""
+    connection = _add_connection(session_context)
+    foreign = DatasetRecord(
+        id=str(uuid4()),
+        original_filename="foreign.csv",
+        storage_filename="foreign.csv",
+        file_type="csv",
+        file_size_bytes=1,
+        status="s3_linked",
+        listing_id="foreign-listing",
+    )
+    scan_job = S3ScanJob(id=str(uuid4()), connection_id=connection.id, status="completed")
+    metadata = S3ObjectMetadata(
+        id=str(uuid4()),
+        connection_id=connection.id,
+        scan_job_id=scan_job.id,
+        object_key="exports/mine.csv",
+        size_bytes=1,
+        content_type="text/csv",
+        last_modified=datetime.now(timezone.utc),
+        etag="etag",
+    )
+    metadata_id = metadata.id
+    with session_context() as session:
+        session.add(foreign)
+        session.add(scan_job)
+        session.add(metadata)
+        session.commit()
+
+    resp = client.post(
+        f"/api/s3-connections/{connection.id}/objects/{metadata_id}/register",
+        json={"listing_id": "foreign-listing"},
+    )
+    assert resp.status_code == 403
