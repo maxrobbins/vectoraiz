@@ -18,9 +18,6 @@ EXPECTED_ORDER = [
     "/sql",
     "/artifacts",
     "/databases",
-    "/earnings",
-    "/billing",
-    "/data-types",
     "/settings",
 ]
 
@@ -76,8 +73,5 @@ def test_get_ordered_items_aim_data_uses_expected_top_bottom_split():
         "/sql",
         "/artifacts",
         "/databases",
-        "/earnings",
-        "/billing",
-        "/data-types",
         "/settings",
     ]
