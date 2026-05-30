@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { getApiUrl } from "@/lib/api";
+import { S3ConnectionReview } from "./S3ConnectionReview";
 
 interface S3Connection {
   id: string;
@@ -313,62 +314,67 @@ export default function DataSourceSettings() {
         ) : (
           <div className="space-y-2">
             {connections.map((connection) => (
-              <div key={connection.id} className="flex flex-col gap-3 rounded-lg bg-secondary/50 p-3 md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">{connection.name}</span>
-                    {statusBadge(connection.status)}
+              <div key={connection.id} className="space-y-3 rounded-lg bg-secondary/50 p-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">{connection.name}</span>
+                      {statusBadge(connection.status)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <span className="font-mono">{connection.bucket}</span>
+                      {connection.prefix ? <span className="font-mono">/{connection.prefix}</span> : null}
+                      <span> · {connection.region}</span>
+                      <span> · Last verified {formatDate(connection.last_scanned_at)}</span>
+                    </div>
+                    {connection.error_message ? (
+                      <p className="line-clamp-2 text-xs text-destructive">{connection.error_message}</p>
+                    ) : null}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    <span className="font-mono">{connection.bucket}</span>
-                    {connection.prefix ? <span className="font-mono">/{connection.prefix}</span> : null}
-                    <span> · {connection.region}</span>
-                    <span> · Last verified {formatDate(connection.last_scanned_at)}</span>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={verifyingId === connection.id || !connection.role_arn}
+                      onClick={() => verifyConnection(connection.id)}
+                    >
+                      {verifyingId === connection.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      Re-verify
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Data Source</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This removes the local S3 connection record for {connection.name}. The AWS IAM role is not changed.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive hover:bg-destructive/90"
+                            onClick={() => deleteConnection(connection.id)}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
-                  {connection.error_message ? (
-                    <p className="line-clamp-2 text-xs text-destructive">{connection.error_message}</p>
-                  ) : null}
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    disabled={verifyingId === connection.id || !connection.role_arn}
-                    onClick={() => verifyConnection(connection.id)}
-                  >
-                    {verifyingId === connection.id ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-3.5 h-3.5" />
-                    )}
-                    Re-verify
-                  </Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete Data Source</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This removes the local S3 connection record for {connection.name}. The AWS IAM role is not changed.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive hover:bg-destructive/90"
-                          onClick={() => deleteConnection(connection.id)}
-                        >
-                          Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
+                {connection.status === "verified" ? (
+                  <S3ConnectionReview connection={connection} onScanComplete={fetchConnections} />
+                ) : null}
               </div>
             ))}
           </div>
