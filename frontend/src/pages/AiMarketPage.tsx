@@ -10,13 +10,11 @@ import { useMode } from "@/contexts/ModeContext";
 import { useCoPilot } from "@/contexts/CoPilotContext";
 import { Progress } from "@/components/ui/progress";
 import { Link } from "react-router-dom";
-import { getRuntimeBrandName } from "@/lib/brandConfig";
 
 const AiMarketPage = () => {
   const { isStandalone, hasFeature } = useMode();
   const { allieAvailable, isStandalone: allieStandalone, connectionStatus } = useCoPilot();
   const isConnectedMode = !allieStandalone && allieAvailable;
-  const isAimDataBrand = getRuntimeBrandName() === "aim-data";
 
   return (
     <div className="space-y-6 max-w-3xl pb-20">
@@ -139,7 +137,7 @@ const AiMarketPage = () => {
           </div>
         </CardHeader>
         <CardContent>
-          {!isAimDataBrand && !isStandalone && hasFeature("marketplace") ? (
+          {!isStandalone && hasFeature("marketplace") ? (
             <Link
               to="/earnings"
               className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -147,13 +145,6 @@ const AiMarketPage = () => {
               View Earnings Dashboard
               <span aria-hidden="true">&rarr;</span>
             </Link>
-          ) : isAimDataBrand ? (
-            <div className="flex items-center gap-2 p-3 bg-muted/50 border border-border rounded-lg">
-              <Info className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-              <span className="text-sm text-muted-foreground">
-                Seller revenue and payout reporting are managed in ai.market.
-              </span>
-            </div>
           ) : (
             <div className="flex items-center gap-2 p-3 bg-muted/50 border border-border rounded-lg">
               <Info className="w-4 h-4 text-muted-foreground flex-shrink-0" />

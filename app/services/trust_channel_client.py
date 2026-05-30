@@ -26,28 +26,11 @@ from typing import Any, Awaitable, Callable, Dict, Optional
 import websockets
 from websockets.exceptions import ConnectionClosed, ConnectionClosedError
 
-# websockets >= 14 raises InvalidStatus (with .response.status_code);
-# older releases raised InvalidStatusCode (with .status_code). Support both.
 try:
-    from websockets.exceptions import InvalidStatus  # websockets >= 14
-except ImportError:  # pragma: no cover
-    InvalidStatus = None  # type: ignore[assignment,misc]
-try:
-    from websockets.exceptions import InvalidStatusCode  # websockets < 14
+    from websockets.exceptions import InvalidStatusCode
 except ImportError:
-    InvalidStatusCode = None  # type: ignore[assignment,misc]
-
-
-def _ws_reject_status(exc: Exception) -> Optional[int]:
-    """Extract the HTTP status code from a websockets handshake rejection,
-    across websockets versions. Returns None if not a rejection."""
-    resp = getattr(exc, "response", None)
-    if resp is not None and getattr(resp, "status_code", None) is not None:
-        return int(resp.status_code)  # websockets >= 14 (InvalidStatus)
-    code = getattr(exc, "status_code", None)
-    if code is not None:
-        return int(code)  # websockets < 14 (InvalidStatusCode)
-    return None
+    # websockets >= 14 moved this; fall back to generic
+    InvalidStatusCode = ConnectionClosedError  # type: ignore[misc,assignment]
 
 from app.config import settings
 
@@ -72,7 +55,6 @@ class TrustChannelClient:
         self._handlers: Dict[str, ActionHandler] = {}
         self._ws: Optional[Any] = None  # websockets connection
         self._running = False
-        self._endpoint_absent_logged = False
         self._send_lock = asyncio.Lock()
         self._waiters: Dict[str, asyncio.Future] = {}
         # Build WS URL from ai_market_url (http → ws, https → wss)
@@ -132,35 +114,14 @@ class TrustChannelClient:
                 backoff = _INITIAL_BACKOFF_S
             except (ConnectionClosed, ConnectionClosedError, OSError) as e:
                 logger.warning("Trust Channel disconnected: %s", e)
+            except InvalidStatusCode as e:
+                logger.error("Trust Channel connection rejected (HTTP %s)", e.status_code)
+                if e.status_code in (401, 403):
+                    logger.error("Auth failure — check VECTORAIZ_INTERNAL_API_KEY")
+                    # Don't retry rapidly on auth failures
+                    backoff = min(backoff * _BACKOFF_MULTIPLIER, _MAX_BACKOFF_S)
             except Exception as e:
-                status = _ws_reject_status(e)
-                if status is not None:
-                    # Handshake was rejected by the server with an HTTP status.
-                    if status in (404, 401, 403):
-                        # The ai.market Trust Channel endpoint is absent or not
-                        # accepting this peer in this environment. This is an
-                        # expected/benign state (e.g. the server route is not yet
-                        # deployed). Stay quiet: log once at WARNING, no traceback,
-                        # and back off to the maximum interval so we are not noisy.
-                        if not self._endpoint_absent_logged:
-                            logger.warning(
-                                "Trust Channel unavailable (HTTP %s at %s); "
-                                "will keep retrying quietly at %.0fs intervals. "
-                                "This is expected if the ai.market Trust Channel "
-                                "endpoint is not deployed in this environment.",
-                                status, self._ws_url, _MAX_BACKOFF_S,
-                            )
-                            self._endpoint_absent_logged = True
-                        backoff = _MAX_BACKOFF_S
-                    else:
-                        logger.error(
-                            "Trust Channel connection rejected (HTTP %s)", status
-                        )
-                        backoff = min(backoff * _BACKOFF_MULTIPLIER, _MAX_BACKOFF_S)
-                else:
-                    logger.error(
-                        "Trust Channel unexpected error: %s", e, exc_info=True
-                    )
+                logger.error("Trust Channel unexpected error: %s", e, exc_info=True)
 
             if not self._running:
                 break
@@ -187,7 +148,6 @@ class TrustChannelClient:
             max_size=2 * 1024 * 1024,  # 2MB max message (base64 chunks)
         ) as ws:
             self._ws = ws
-            self._endpoint_absent_logged = False
             logger.info("Trust Channel connected")
 
             async for raw_message in ws:

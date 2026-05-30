@@ -1,0 +1,120 @@
+name: AIM Data Release
+
+on:
+  push:
+    tags: ['aim-data-v*']
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_rc: ${{ steps.version.outputs.is_rc }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#aim-data-}"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if echo "$VER" | grep -qE '\-rc\.'; then
+            echo "is_rc=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_rc=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Compute image tags
+        id: tags
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          IS_RC="${{ steps.version.outputs.is_rc }}"
+          TAGS="ghcr.io/aidotmarket/aim-data:${VERSION}"
+          if [ "$IS_RC" != "true" ]; then
+            TAGS="$(printf '%s\nghcr.io/aidotmarket/aim-data:latest' "$TAGS")"
+          fi
+          {
+            echo "tags<<EOF"
+            echo "$TAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.customer
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+
+  smoke-test:
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Wait for GHCR propagation
+        run: sleep 20
+      - name: Verify multi-arch manifest
+        run: |
+          TAG="${{ needs.build-push.outputs.version }}"
+          MANIFEST=$(docker manifest inspect "ghcr.io/aidotmarket/aim-data:${TAG}")
+          echo "$MANIFEST" | grep -q '"architecture": "amd64"' || { echo "::error::amd64 missing"; exit 1; }
+          echo "$MANIFEST" | grep -q '"architecture": "arm64"' || { echo "::error::arm64 missing"; exit 1; }
+          echo "Multi-arch manifest verified"
+      - name: Pull and run smoke test
+        run: |
+          TAG="${{ needs.build-push.outputs.version }}"
+          docker pull "ghcr.io/aidotmarket/aim-data:${TAG}"
+          CID=$(docker run -d -p 8080:8080 "ghcr.io/aidotmarket/aim-data:${TAG}")
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then
+              echo "Health check passed"
+              docker rm -f "$CID"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Health check failed after 60s"
+          docker logs "$CID" | tail -50
+          docker rm -f "$CID"
+          exit 1
+
+  create-release:
+    needs: [build-push, smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "AIM Data ${{ needs.build-push.outputs.version }}"
+          files: |
+            installers/aim-data/install.sh
+            installers/aim-data/install.ps1
+            docker-compose.aim-data.yml
+          generate_release_notes: true
+          prerelease: ${{ needs.build-push.outputs.is_rc == 'true' }}

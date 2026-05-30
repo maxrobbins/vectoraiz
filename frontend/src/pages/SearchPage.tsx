@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Search,
@@ -32,7 +32,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { useSearch, useDatasets } from "@/hooks/useApi";
 import type { SearchResult } from "@/lib/api";
-import { getRuntimeBrandName } from "@/lib/brandConfig";
 
 const exampleQueries = [
   "Show me high value orders over $1000",
@@ -44,7 +43,6 @@ const SearchPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const datasetParam = searchParams.get("dataset");
-  const isAimDataBrand = getRuntimeBrandName() === "aim-data";
 
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("__all__");
   const [searchQuery, setSearchQuery] = useState("");
@@ -56,17 +54,9 @@ const SearchPage = () => {
   const { search, results, loading: isSearching, error } = useSearch();
 
   // Get datasets list from API only
-  const sourceDatasets = datasetsData?.datasets || [];
-  const datasets = sourceDatasets
-    .filter(d => isAimDataBrand || d.status === 'ready')
-    .map(d => ({
-      id: d.id,
-      name: d.original_filename,
-      status: d.status,
-      file_type: d.file_type,
-      created_at: d.created_at,
-      metadata: d.metadata,
-    }));
+  const datasets = datasetsData?.datasets
+    ?.filter(d => d.status === 'ready')
+    ?.map(d => ({ id: d.id, name: d.original_filename, status: d.status })) || [];
 
   // Auto-select dataset from URL parameter
   useEffect(() => {
@@ -89,33 +79,6 @@ const SearchPage = () => {
     setSearchQuery(query);
   };
 
-  const aimDataFilteredDatasets = useMemo(() => {
-    const scopedDatasets = isAllDatasets
-      ? datasets
-      : datasets.filter((dataset) => dataset.id === selectedDatasetId);
-    const terms = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
-
-    if (!isAimDataBrand || terms.length === 0) {
-      return scopedDatasets;
-    }
-
-    return scopedDatasets.filter((dataset) => {
-      const columns = dataset.metadata?.columns?.map((column) => column.name).join(" ") ?? "";
-      const haystack = [
-        dataset.name,
-        dataset.file_type,
-        dataset.status,
-        dataset.created_at,
-        columns,
-        dataset.metadata?.row_count?.toString(),
-        dataset.metadata?.column_count?.toString(),
-        dataset.metadata?.size_bytes?.toString(),
-      ].filter(Boolean).join(" ").toLowerCase();
-
-      return terms.every((term) => haystack.includes(term));
-    });
-  }, [datasets, isAllDatasets, isAimDataBrand, searchQuery, selectedDatasetId]);
-
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
       toast.error("Please enter a search query");
@@ -125,8 +88,6 @@ const SearchPage = () => {
     if (!selectedDataset) return;
 
     setHasSearched(true);
-    if (isAimDataBrand) return;
-
     await search(searchQuery, isAllDatasets ? {} : { dataset_id: selectedDatasetId });
   };
 
@@ -171,9 +132,7 @@ const SearchPage = () => {
 
       <div>
         <p className="text-muted-foreground">
-          {isAimDataBrand
-            ? "Filter your files by filename, type, status, or metadata"
-            : "Perform semantic search across your datasets"}
+          Perform semantic search across your datasets
         </p>
       </div>
 
@@ -216,7 +175,7 @@ const SearchPage = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
           <Input
             type="text"
-            placeholder={isAimDataBrand ? "Filter files by filename, type, or metadata..." : "Search your data using natural language..."}
+            placeholder="Search your data using natural language..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -234,12 +193,12 @@ const SearchPage = () => {
           ) : (
             <Search className="w-4 h-4 mr-2" />
           )}
-          {isAimDataBrand ? "Filter" : "Search"}
+          Search
         </Button>
       </div>
 
       {/* Example Queries */}
-      {!isAimDataBrand && selectedDataset && !hasSearched && (
+      {selectedDataset && !hasSearched && (
         <div className="max-w-2xl">
           <p className="text-sm text-muted-foreground mb-3 flex items-center gap-2">
             <Sparkles className="w-4 h-4" />
@@ -287,27 +246,7 @@ const SearchPage = () => {
       )}
 
       {/* No Results State */}
-      {isAimDataBrand && hasSearched && aimDataFilteredDatasets.length === 0 && (
-        <Card className="bg-card border-border">
-          <CardContent className="py-12">
-            <div className="flex flex-col items-center justify-center text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center">
-                <Search className="w-8 h-8 text-muted-foreground" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-lg font-semibold text-foreground">
-                  No files found
-                </h3>
-                <p className="text-muted-foreground max-w-sm">
-                  No files matched "<span className="text-foreground">{searchQuery}</span>". Try a filename, file type, status, or metadata value.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {!isAimDataBrand && !isSearching && hasSearched && results && results.results.length === 0 && (
+      {!isSearching && hasSearched && results && results.results.length === 0 && (
         <Card className="bg-card border-border">
           <CardContent className="py-12">
             <div className="flex flex-col items-center justify-center text-center space-y-4">
@@ -328,74 +267,7 @@ const SearchPage = () => {
       )}
 
       {/* Search Results */}
-      {isAimDataBrand && hasSearched && aimDataFilteredDatasets.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-foreground">
-              Found {aimDataFilteredDatasets.length} file{aimDataFilteredDatasets.length !== 1 ? "s" : ""} for "{searchQuery}"
-            </h2>
-            <span className="text-sm text-muted-foreground">
-              {isAllDatasets ? "All files" : selectedDataset?.name}
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            {aimDataFilteredDatasets.map((dataset) => (
-              <Card
-                key={dataset.id}
-                className="bg-card border-border hover:border-primary/30 transition-colors"
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 space-y-3 min-w-0">
-                      <div>
-                        <h3 className="font-medium text-foreground truncate">{dataset.name}</h3>
-                        <p className="text-xs text-muted-foreground">
-                          {dataset.file_type || "Unknown type"} &middot; {dataset.status}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Rows</p>
-                          <p className="text-sm text-foreground font-medium">{dataset.metadata?.row_count ?? "N/A"}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Columns</p>
-                          <p className="text-sm text-foreground font-medium">{dataset.metadata?.column_count ?? "N/A"}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Size</p>
-                          <p className="text-sm text-foreground font-medium">
-                            {dataset.metadata?.size_bytes ? `${(dataset.metadata.size_bytes / 1024 / 1024).toFixed(1)} MB` : "N/A"}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Created</p>
-                          <p className="text-sm text-foreground font-medium">
-                            {new Date(dataset.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => navigate(`/datasets/${dataset.id}`)}
-                    >
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      Open File
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!isAimDataBrand && !isSearching && results && results.results.length > 0 && (
+      {!isSearching && results && results.results.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-foreground">
@@ -487,9 +359,8 @@ const SearchPage = () => {
                   Select a dataset to search
                 </h3>
                 <p className="text-muted-foreground max-w-sm">
-                  {isAimDataBrand
-                    ? "Choose a file from the dropdown above to filter by filename or metadata."
-                    : "Choose a dataset from the dropdown above to start searching with natural language queries."}
+                  Choose a dataset from the dropdown above to start searching
+                  with natural language queries.
                 </p>
               </div>
             </div>
@@ -507,20 +378,11 @@ const SearchPage = () => {
               </div>
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold text-foreground">
-                  {isAimDataBrand ? "Ready to filter" : "Ready to search"}
+                  Ready to search
                 </h3>
                 <p className="text-muted-foreground max-w-sm">
-                  {isAimDataBrand ? (
-                    <>
-                      Filtering <span className="text-foreground font-medium">{selectedDataset.name}</span>.
-                      Enter a filename, type, status, or metadata term above.
-                    </>
-                  ) : (
-                    <>
-                      Searching in <span className="text-foreground font-medium">{selectedDataset.name}</span>.
-                      Enter a natural language query above to find relevant data.
-                    </>
-                  )}
+                  Searching in <span className="text-foreground font-medium">{selectedDataset.name}</span>.
+                  Enter a natural language query above to find relevant data.
                 </p>
               </div>
             </div>

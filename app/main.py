@@ -16,7 +16,7 @@ faulthandler.enable(file=sys.stderr, all_threads=True)
 from app.config import settings
 
 # BQ-127: Stock routers — always imported regardless of mode
-from app.routers import health, datasets, search, sql, vectors, pii, docs, diagnostics, imports, s3_connections
+from app.routers import health, datasets, search, sql, vectors, pii, docs, diagnostics, imports
 from app.routers import auth as auth_router_module
 from app.core.database import init_db, close_db
 from app.core.structured_logging import setup_logging
@@ -549,6 +549,24 @@ def create_app() -> FastAPI:
     # BQ-127: Register routers — stock (always) vs connected (conditional)
     # ------------------------------------------------------------------
 
+    # PUBLIC — no auth required
+    app.include_router(health.router, prefix="/api", tags=["health"])
+    app.include_router(diagnostics.router, prefix="/api", tags=["diagnostics"])
+    app.include_router(docs.router, prefix="/api/docs", tags=["documentation"])
+
+    # PUBLIC — Portal (BQ-VZ-SHARED-SEARCH) — own trust zone, own auth (M2)
+    from app.routers.portal import router as portal_router, admin_router as portal_admin_router
+    app.include_router(portal_router, prefix="/api/portal", tags=["portal"])
+    # PUBLIC — Portal allAI Chat (Phase 1.5) — portal auth, read-only tools
+    from app.routers.portal_allai import router as portal_allai_router
+    app.include_router(portal_allai_router, prefix="/api/portal/allai", tags=["portal-allai"])
+    # ADMIN ONLY — Portal management
+    app.include_router(
+        portal_admin_router,
+        prefix="/api",
+        tags=["portal-admin"],
+        dependencies=admin_route_dependency,
+    )
     app.include_router(
         auth_router_module.router,
         prefix="/api/auth",
@@ -612,12 +630,6 @@ def create_app() -> FastAPI:
         prefix="/api/v1/db",
         tags=["database"],
         dependencies=admin_route_dependency,
-    )
-    app.include_router(
-        s3_connections.router,
-        prefix="/api/s3-connections",
-        tags=["s3-connections"],
-        dependencies=any_user_dependency,
     )
 
     # ADMIN + USER — Co-Pilot (REST + WebSocket)

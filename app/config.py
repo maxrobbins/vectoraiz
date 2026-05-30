@@ -16,7 +16,7 @@ UPDATED:
 import logging
 import os
 from pydantic_settings import BaseSettings
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import Field
 from typing import List, Optional, Literal
 from cryptography.fernet import Fernet
 import psutil
@@ -90,42 +90,20 @@ class Settings(BaseSettings):
     connected_fallback: Literal["standalone", "refuse"] = "standalone"
 
     # BQ-127: Local auth secrets (C1 — separate from SECRET_KEY)
-    apikey_hmac_secret: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("AIM_DATA_APIKEY_HMAC_SECRET", "VECTORAIZ_APIKEY_HMAC_SECRET"),
-        description="HMAC for local API key hashing.",
-    )
+    apikey_hmac_secret: Optional[str] = None   # HMAC for local API key hashing
     local_auth_secret: Optional[str] = None    # JWT signing key (Phase 2, not used yet)
 
     # BQ-127: Premium feature flags (only relevant in connected mode)
-    allai_enabled: bool = Field(
-        default=True,
-        validation_alias=AliasChoices("AIM_DATA_ALLAI_ENABLED", "VECTORAIZ_ALLAI_ENABLED"),
-    )
+    allai_enabled: bool = True
     marketplace_enabled: bool = True
 
     # ai.market platform integration
-    ai_market_url: str = Field(
-        default=_DEFAULT_AI_MARKET_URL,
-        validation_alias=AliasChoices("AIM_DATA_AI_MARKET_URL", "VECTORAIZ_AI_MARKET_URL"),
-    )
-    auth_enabled: bool = Field(
-        default=True,
-        validation_alias=AliasChoices("AIM_DATA_AUTH_ENABLED", "VECTORAIZ_AUTH_ENABLED"),
-        description="S100: Default ON. Set VECTORAIZ_AUTH_ENABLED=false only for local dev.",
-    )
+    ai_market_url: str = _DEFAULT_AI_MARKET_URL
+    auth_enabled: bool = True  # S100: Default ON. Set VECTORAIZ_AUTH_ENABLED=false only for local dev.
     auth_cache_ttl: int = 300 # 5 minutes in seconds
 
     # Service-to-service auth (for internal endpoints on ai-market-backend)
-    internal_api_key: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("AIM_DATA_INTERNAL_API_KEY", "VECTORAIZ_INTERNAL_API_KEY"),
-    )
-    ai_market_aws_account_id: str = Field(
-        default="000000000000",
-        validation_alias=AliasChoices("AI_MARKET_AWS_ACCOUNT_ID", "AIM_DATA_AWS_ACCOUNT_ID", "VECTORAIZ_AI_MARKET_AWS_ACCOUNT_ID"),
-        description="12-digit AWS account ID allowed to assume seller S3 roles.",
-    )
+    internal_api_key: Optional[str] = None
     
     # Encryption key for API keys at rest (BQ-066)
     # If not set, auto-generates a Fernet key.
@@ -140,11 +118,7 @@ class Settings(BaseSettings):
     # BQ-102: Device identity keystore
     # Passphrase for encrypting private keys in the local keystore.
     # REQUIRED in production — startup will fail without it.
-    keystore_passphrase: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("AIM_DATA_KEYSTORE_PASSPHRASE", "VECTORAIZ_KEYSTORE_PASSPHRASE"),
-        description="Passphrase for encrypting private keys in the local keystore. REQUIRED in production. SecretStr-equivalent via env var.",
-    )
+    keystore_passphrase: Optional[str] = None  # SecretStr-equivalent via env var
     # Path to keystore file — defaults to persistent data volume for Docker.
     keystore_path: str = "/data/keystore.json"
 
@@ -186,11 +160,7 @@ class Settings(BaseSettings):
     public_url: str = "https://vectoraiz-backend-production.up.railway.app"
 
     # BQ-MCP-RAG: External LLM Connectivity (§4.5)
-    connectivity_enabled: bool = Field(
-        default=False,
-        validation_alias=AliasChoices("AIM_DATA_CONNECTIVITY_ENABLED", "VECTORAIZ_CONNECTIVITY_ENABLED"),
-        description="Off by default - customer must opt in.",
-    )
+    connectivity_enabled: bool = False          # Off by default — customer must opt in
     connectivity_bind_host: str = "127.0.0.1"  # Loopback only by default
     connectivity_max_tokens: int = 10
     connectivity_rate_limit_rpm: int = 30       # Per-token requests/min
@@ -220,11 +190,7 @@ class Settings(BaseSettings):
     db_extract_max_rows: int = 5_000_000  # Max rows per extraction (M3)
 
     # BQ-VZ-SERIAL-CLIENT: Serial activation & metering
-    serial: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("AIM_DATA_SERIAL", "VECTORAIZ_SERIAL"),
-        description="Device serial number for X-Serial header.",
-    )
+    serial: Optional[str] = None  # Device serial number for X-Serial header
     aimarket_url: str = _DEFAULT_AI_MARKET_URL  # ai-market serial authority base URL
     app_version: str = os.environ.get("VECTORAIZ_VERSION", "dev")
     serial_data_dir: str = "/data"  # Directory for serial.json + pending_usage.jsonl
@@ -241,16 +207,8 @@ class Settings(BaseSettings):
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000", "http://localhost:8080", "https://vectoraiz-frontend-production.up.railway.app", "https://dev.vectoraiz.com", "https://vectoraiz.com", "https://www.vectoraiz.com", "https://vectoraiz-website-production.up.railway.app"]
     
     class Config:
-        env_ignore_empty = True  # S725: empty env (e.g. blank AIM_DATA_AI_MARKET_URL) must not shadow AliasChoices fallback
         env_file = ".env"
         env_prefix = "VECTORAIZ_"
-
-    @field_validator("ai_market_aws_account_id")
-    @classmethod
-    def _validate_ai_market_aws_account_id(cls, value: str) -> str:
-        if not value.isdigit() or len(value) != 12:
-            raise ValueError("AI_MARKET_AWS_ACCOUNT_ID must be a 12-digit string")
-        return value
 
     def model_post_init(self, __context) -> None:
         if not self.allowed_raw_file_dirs:
@@ -315,11 +273,5 @@ if not _os.environ.get("VECTORAIZ_MODE") and _os.environ.get("VECTORAIZ_AI_MARKE
             "VECTORAIZ_MODE not set but AI_MARKET_URL detected — defaulting to connected. "
             "Set VECTORAIZ_MODE=connected explicitly. This inference will be removed in v2.0."
         )
-
-from app.core.channel_config import CHANNEL, ChannelType
-
-if CHANNEL == ChannelType.aim_data and settings.mode != "connected":
-    settings.mode = "connected"
-    logger.info("AIM Data channel detected — forcing connected mode")
 
 logger.info("vectorAIz operating mode: %s", settings.mode)

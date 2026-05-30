@@ -44,8 +44,7 @@ const LoginPage = () => {
       <div className="w-full max-w-md space-y-8">
         {/* Logo + heading */}
         <div className="flex flex-col items-center gap-4">
-          <h1 className="text-2xl font-bold text-foreground">AIM DATA</h1>
-          <img src={brand.logoSmPath} alt={brand.sidebarLogoAlt} className="w-44 h-auto" />
+          <img src={brand.logoSmPath} alt={brand.sidebarLogoAlt} className="w-14 h-14 rounded-2xl" />
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-bold text-foreground">Sign in with ai.market</h1>
             <p className="text-muted-foreground">Use your ai.market credentials to access AIM Data</p>
@@ -107,7 +106,7 @@ const LoginPage = () => {
               <p className="text-sm text-center text-muted-foreground">
                 Don't have an account?{" "}
                 <a
-                  href="https://ai.market/register"
+                  href="https://ai.market/signup"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"
