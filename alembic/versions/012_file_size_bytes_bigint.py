@@ -24,22 +24,22 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("dataset_records") as batch_op:
-        batch_op.alter_column(
-            "file_size_bytes",
-            existing_type=sa.Integer(),
-            type_=sa.BigInteger(),
-            existing_nullable=False,
-            existing_server_default="0",
-        )
+    op.alter_column(
+        "dataset_records",
+        "file_size_bytes",
+        existing_type=sa.Integer(),
+        type_=sa.BigInteger(),
+        existing_nullable=False,
+        existing_server_default="0",
+    )
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("dataset_records") as batch_op:
-        batch_op.alter_column(
-            "file_size_bytes",
-            existing_type=sa.BigInteger(),
-            type_=sa.Integer(),
-            existing_nullable=False,
-            existing_server_default="0",
-        )
+    op.alter_column(
+        "dataset_records",
+        "file_size_bytes",
+        existing_type=sa.BigInteger(),
+        type_=sa.Integer(),
+        existing_nullable=False,
+        existing_server_default="0",
+    )

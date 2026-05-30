@@ -803,80 +803,6 @@ export const rawFilesApi = {
     return response.json();
   },
 
-  /**
-   * AIM Data raw upload with progress + abort.
-   * Mirrors datasetsApi.uploadWithProgress but posts to /api/raw/files/upload.
-   * Used by the aim-data channel in UploadContext (no vectorization).
-   */
-  uploadRawWithProgress: (
-    file: File,
-    options?: { onProgress?: (percent: number) => void }
-  ): { promise: Promise<RawFile>; abort: () => void } => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${getApiUrl()}/api/raw/files/upload`);
-
-    const accessToken = getStoredAccessToken();
-    if (accessToken) {
-      xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
-    }
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && options?.onProgress) {
-        const pct = Math.min(Math.round((e.loaded / e.total) * 100), 95);
-        options.onProgress(pct);
-      }
-    };
-
-    const promise = new Promise<RawFile>((resolve, reject) => {
-      xhr.onabort = () => reject(new UploadAbortedError());
-      xhr.onload = () => {
-        if (xhr.status === 401) {
-          clearAuthTokens();
-        }
-        let body: Record<string, unknown>;
-        try {
-          body = JSON.parse(xhr.responseText || '{}');
-        } catch {
-          reject(new Error('Upload failed — invalid server response'));
-          return;
-        }
-        if (xhr.status >= 200 && xhr.status < 300) {
-          options?.onProgress?.(100);
-          resolve(body as unknown as RawFile);
-        } else {
-          reject(new Error((body.detail as string) || `Upload failed: ${xhr.status}`));
-        }
-      };
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.ontimeout = () => reject(new Error('Upload timed out'));
-    });
-
-    const formData = new FormData();
-    formData.append('file', file);
-    xhr.send(formData);
-
-    return { promise, abort: () => xhr.abort() };
-  },
-
-  /** Create a draft raw listing from a registered raw file. */
-  createRawListing: (req: {
-    raw_file_id: string;
-    title: string;
-    description: string;
-    tags?: string[];
-    price_cents?: number;
-  }) =>
-    apiFetch<RawListing>('/api/raw/listings', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
-
-  /** Publish a draft raw listing to ai.market. */
-  publishRawListing: (listingId: string) =>
-    apiFetch<RawListing>(`/api/raw/listings/${listingId}/publish`, {
-      method: 'POST',
-    }),
-
   listRawFiles: () => apiFetch<RawFile[]>('/api/raw/files'),
 
   getRawFile: (id: string) => apiFetch<RawFile>(`/api/raw/files/${id}`),
@@ -899,6 +825,11 @@ export const rawFilesApi = {
     return apiFetch<RawListingListResponse>(`/api/raw/listings${qs ? `?${qs}` : ''}`);
   },
 
+  createRawListing: (data: { raw_file_id: string; title: string; description: string; tags?: string[]; price_cents?: number }) =>
+    apiFetch<RawListing>('/api/raw/listings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   downloadUrl: (id: string) => `${getApiUrl()}/api/raw/download/${id}`,
 

@@ -25,7 +25,6 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { useDatasets } from "@/hooks/useApi";
-import { getRuntimeBrandName } from "@/lib/brandConfig";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -50,7 +49,6 @@ const pages = [
 const CommandPalette = ({ open, onOpenChange, onOpenUpload }: CommandPaletteProps) => {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const isAimDataBrand = getRuntimeBrandName() === "aim-data";
   
   // Fetch datasets from API
   const { data: datasetsData, loading: datasetsLoading } = useDatasets();
@@ -103,9 +101,7 @@ const CommandPalette = ({ open, onOpenChange, onOpenUpload }: CommandPaletteProp
 
         {/* Pages */}
         <CommandGroup heading="Pages">
-          {pages
-            .filter((page) => !isAimDataBrand || !["/earnings", "/data-types"].includes(page.path))
-            .map((page) => (
+          {pages.map((page) => (
             <CommandItem
               key={page.path}
               onSelect={() => handleSelect(page.path)}

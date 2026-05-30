@@ -28,7 +28,6 @@ import { cn } from "@/lib/utils";
 import { useDatasetStatus } from "@/hooks/useApi";
 import { LocalImportBrowser } from "@/components/LocalImportBrowser";
 import { useUpload, type QueuedFile, type FileState } from "@/contexts/UploadContext";
-import { useChannel } from "@/hooks/useChannel";
 import { useState } from "react";
 
 const getFileIcon = (fileName: string) => {
@@ -260,13 +259,9 @@ const FileUploadModal = () => {
     addFiles(acceptedFiles, hasPaths ? paths : undefined);
   }, [addFiles]);
 
-  const channel = useChannel();
-  const isRawFlow = channel === "aim-data";
-
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    // AIM Data accepts any file type — listings don't require processable formats.
-    accept: isRawFlow ? undefined : ACCEPT_MAP,
+    accept: ACCEPT_MAP,
     multiple: true,
   });
 

@@ -20,7 +20,6 @@ import { cn } from "@/lib/utils";
 import { useMode } from "@/contexts/ModeContext";
 import { useBrand } from "@/contexts/BrandContext";
 import { useChannel } from "@/hooks/useChannel";
-import { getRuntimeBrandName } from "@/lib/brandConfig";
 
 interface NavItem {
   path: string;
@@ -61,7 +60,7 @@ const NAV_ORDER_MARKETPLACE = [
 const NAV_ORDER_AIM_DATA = [
   "/", "/datasets", "/ai-market", "/data-requests",
   "/search", "/sql", "/artifacts", "/databases",
-  "/settings",
+  "/earnings", "/billing", "/data-types", "/settings",
 ];
 
 // Separator index: items after this index go in the bottom section
@@ -99,14 +98,11 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const { hasFeature, isStandalone } = useMode();
   const channel = useChannel();
   const brand = useBrand();
-  const isAimDataBrand = getRuntimeBrandName() === "aim-data";
 
   const { top, bottom } = getOrderedItems(channel);
 
   const filterByFeature = (items: NavItem[]) =>
-    items
-      .filter((item) => !isAimDataBrand || !["/billing", "/data-types", "/earnings"].includes(item.path))
-      .filter((item) => !item.feature || hasFeature(item.feature));
+    items.filter((item) => !item.feature || hasFeature(item.feature));
 
   const navItems = filterByFeature(top);
   const bottomItems = filterByFeature(bottom);

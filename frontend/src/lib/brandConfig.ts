@@ -59,8 +59,8 @@ export const AIM_DATA_BRAND: BrandConfig = {
   productName: "AIM Data",
   shortName: "AD",
   tagline: "Connect your private data to ai.market",
-  logoPath: "/aim-data-logo.svg",
-  logoSmPath: "/aim-data-logo.svg",
+  logoPath: "/aim-data-logo.jpg",
+  logoSmPath: "/aim-data-logo-sm.png",
   metaTitle: "AIM Data — ai.market",
   metaDescription: "AIM Data — Connect your private data to ai.market",
   metaAuthor: "AIM Data",
@@ -84,7 +84,7 @@ export const AIM_DATA_BRAND: BrandConfig = {
 
 export const AIM_CHANNEL_BRAND: BrandConfig = AIM_DATA_BRAND;
 
-export function getRuntimeBrandName(): string {
+function getRuntimeBrandName(): string {
   const envBrand = import.meta.env.VITE_BRAND?.toLowerCase();
   if (
     envBrand === "aim-data" ||

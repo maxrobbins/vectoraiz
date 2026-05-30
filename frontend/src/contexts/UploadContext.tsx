@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
-import { datasetsApi, rawFilesApi, DuplicateFileError, UploadAbortedError, importApi } from "@/lib/api";
-import { useChannel } from "@/hooks/useChannel";
+import { datasetsApi, DuplicateFileError, UploadAbortedError, importApi } from "@/lib/api";
 import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
@@ -93,10 +92,6 @@ const JUNK_FILES = new Set([".DS_Store", "Thumbs.db", ".gitkeep", ".gitignore", 
 // ---------------------------------------------------------------------------
 
 export function UploadProvider({ children }: { children: React.ReactNode }) {
-  // ----- channel-aware behavior (aim-data = raw-files flow, no vectorization) -----
-  const channel = useChannel();
-  const isRawFlow = channel === "aim-data";
-
   // ----- queue -----
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -239,20 +234,6 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   const uploadOne = async (item: QueuedFile, allowDuplicate: boolean) => {
     updateFile(item.id, { state: "uploading", progress: 0 });
     try {
-      // AIM Data flow: raw upload, no vectorization, no processing phase.
-      if (isRawFlow) {
-        const { promise, abort } = rawFilesApi.uploadRawWithProgress(item.file, {
-          onProgress: (pct) => updateFile(item.id, { progress: pct }),
-        });
-        abortHandles.current.set(item.id, abort);
-        const result = await promise;
-        abortHandles.current.delete(item.id);
-        // raw_files are immediately "complete" — no server-side processing phase.
-        updateFile(item.id, { state: "complete", progress: 100, datasetId: result.id });
-        return "ok";
-      }
-
-      // VectorAIz flow: dataset upload with vectorization + processing pipeline.
       const { promise, abort } = datasetsApi.uploadWithProgress(item.file, {
         allowDuplicate,
         batchId: batchIdRef.current ?? undefined,

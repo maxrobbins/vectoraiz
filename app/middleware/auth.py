@@ -157,23 +157,7 @@ def role_required(*roles: str):
                 )
                 return request.state.user
 
-        # 2. Try Authorization: Bearer (S708 Phase 5 — ai.market token flow)
-        authorization = request.headers.get("Authorization", "")
-        if authorization.startswith("Bearer "):
-            # Delegate to get_current_user which understands ai.market Bearer tokens
-            # (validates via ai.market /api/v1/auth/me with in-process cache).
-            user = await get_current_user(request)
-            # ai.market authenticated users default to "admin" role to match
-            # backward-compat behavior of the X-API-Key branch.
-            request.state.user_role = "admin"
-            if "admin" not in roles:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Insufficient permissions",
-                )
-            return user
-
-        # 3. Try X-API-Key (existing flow)
+        # 2. Try X-API-Key (existing flow)
         api_key = request.headers.get("X-API-Key")
         if api_key:
             user = await get_current_user(request)
@@ -186,7 +170,7 @@ def role_required(*roles: str):
                 )
             return user
 
-        # 4. Neither present
+        # 3. Neither present
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",

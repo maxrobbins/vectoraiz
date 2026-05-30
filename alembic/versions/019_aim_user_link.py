@@ -25,12 +25,12 @@ def upgrade() -> None:
         ["ai_market_user_id"],
         unique=False,
     )
-    with op.batch_alter_table("users") as batch_op:
-        batch_op.alter_column(
-            "pw_hash",
-            existing_type=sa.String(255),
-            nullable=True,
-        )
+    op.alter_column(
+        "users",
+        "pw_hash",
+        existing_type=sa.String(255),
+        nullable=True,
+    )
 
 
 def downgrade() -> None:
