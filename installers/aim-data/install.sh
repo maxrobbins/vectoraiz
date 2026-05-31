@@ -63,7 +63,7 @@ VECTORAIZ_SECRET_KEY=$(generate_secret)
 VECTORAIZ_VERSION=latest
 VECTORAIZ_CHANNEL=aim-data
 AIM_DATA_PORT=8080
-VECTORAIZ_MODE=standalone
+VECTORAIZ_MODE=connected
 EOF
   pass "Generated .env"
 else

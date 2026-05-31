@@ -77,7 +77,7 @@ VECTORAIZ_SECRET_KEY=$(New-RandomSecret)
 VECTORAIZ_VERSION=latest
 VECTORAIZ_CHANNEL=aim-data
 AIM_DATA_PORT=8080
-VECTORAIZ_MODE=standalone
+VECTORAIZ_MODE=connected
 "@
     Set-Content -Path $envFile -Value $envContent -Encoding UTF8
     Write-Success "Generated .env"
